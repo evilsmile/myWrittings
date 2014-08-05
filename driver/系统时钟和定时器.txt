@@ -1,0 +1,159 @@
+一、S3C2410/S3C2440时钟体系
+    S3C2410/S3C2440的时钟控制逻辑既可以外接晶振，然后通过内部电路产生时钟源；也可以直接使用外部提供的时钟源，它们通过引脚的设置来选择。时钟控制逻辑给整个芯片提供3种时钟：FCLK用于CPU核；HCLK用于AHB总线上设备，比如CPU核、存储器控制器、中断控制器、LCD控制器、DMA和USB主机模块等；PCLK用于APB总线上的设备，比如WATCHDOG、IIS、IIC、PWM定时器、MMC接口、ADC、UART、GPIO、RTC和SPI。
+    AHB（Advanced High performance Bus）总线主要用于高性能模块（如CPU、DMA和DSP等）之间的连接；APB（Advanced Peripheral Bus）总线主要用于低宽带的周边外设之间的连接，例如UART、IIC等。
+    S3C2410CPU核的工作电压为1.8V时，主频可以达到200MHz；工作电压为2.0V时，主频可达266MHz。S3C2440CPU核的工作电压为1.2V时，主频可以达到300MHz；工作电压为1.3V时，主频可达到400MHz。为了降低电磁干扰、降低板间布线的要求，S3C2410/S3C2440外接的晶振频率通常很低，本开发板上为12MHz，需要通过时钟控制逻辑的PLL提高系统时钟。
+    S3C2440/S3C2410有两个PLL：MPLL和UPLL。UPLL专门用于USB设备，MPLL用于设置FCLK、HCLK、PLCK。它们的设置方法相似，本书以MPLL为例。
+    上电时，PLL没被启动，FCLK即等于外部输入的时钟，称为Fin。若要提高系统时钟，需要软件来启动PLL。下面介绍PLL的设置过程：
+    （1）上电几毫秒后，晶振输出稳定，FCLK＝Fin（晶振频率），nRESET信号恢复高电平后，CPU开始执行执行指令。
+    （2）可以在程序开关启动MPLL，设置MPLL的几个寄存器后，需要等待一段里时间（Lock Time），MPLL的输出才稳定。在这段时间（称为Lock Time）内，FCLK停振，CPU停止工作。LockTime的长短由寄存器LOCKTIME设定。
+    （3）Lock Time之后，MPLL输出正常，CPU工作在新的FCLK下。
+
+    FCLK、HCLK和PCLK的比例是可以改变的，设置它们三者的比例，启动MPLL只需要设置3个寄存器（对于S3C2440的一些时钟比例，还需要额外设置一个寄存器）。
+    （1）LOCKTIME寄存器：用于设置“Lock Time”的长度
+         因为MPLL启动后需要等等一段时间（Lock Time），使得其输出稳定。S3C2410中，位[23:12]用于UPLL，位[11:0]用于MPLL。S3C2440中，位[31:16]用于UPLL，位[15:0]用于MPLL。一般而言，使用它的默认值即可，S3C2410中默认值为0x00FFFFFF，S3C2440中默认值为0xFFFFFFFF。
+    （2）MPLLCON寄存器（Main PLL Control）：用于设置FCLK与Fin的倍数
+        位[19:12]的值称为MDIV，位[9:4]的值称为PDIV，位[1:0]的值称为SDIV。FCLK与Fin的关系有如下计算公式。
+	 ＊对于S3C2410：
+	   MPLL（FCLK）=(m*Fin)/(p*2^s)
+	   其中：m=MDIV+8, p=PDIV+2, s=SDIV
+	 ＊对于S3C2440：
+	   MPLL（FCLK）=(2*m*Fin)/(p*2^s)
+	   其中：m=MDIV+8, p=PDIV+2, s=SDIV
+	当设置MPLLCON之后，Lock Time就被自动插入。Lock Time之后，MPLL输出稳定，CPU工作在新的FCLK下。
+    （3）CLKDIVN寄存器（CLOCK DIVIDER CONTROL）：用于设置FCLK、HCL、PCLK三者的比例
+        对于S3C2440的一些时钟比例，还需要额外设置一个寄存器CAMDIVN。具体可参考手册。
+
+
+二、PWD定时器
+    S3C2410/S3C2440的定时器部件完全一样，共有5个16位的定时器。其中定时器0、1、2、3有PWDM（Pulse Width Modulation）功能，即它们都有一个输出引脚，可以通过定时器来控制引脚周期性的高、低电平变化；定时器4没有输出引脚。
+    定时器部件的时钟源为PCLK，首先通过两个8位的预分频器降低频率：定时器0、1共用第一个预分频器，定时器2、3、4共用第二个预分频器。预分频器的输出将进入第二级分频器，它们输出5种频率的时钟：2分频、4分频、8分频、16分频或者外部时钟TCLK0/TCLK1。每个定时器的工作时钟可以从这5种频率中选择。
+    这两个预分频都可以通过TCFG0寄存器来设置，每个定时器工作在哪种频率下也可以通过TCFG1寄存器来选择。
+    定时器内部控制逻辑的工作流程如下：
+    （1）程序初始，设定TCMPBn、TCNTBn这两个寄存器，它们表示定时器n的比较值、初始计数值。
+    （2）随之设置TCON寄存器启动定时器n，这时，TCMPBn、TCNTBn的值将被装入其内部寄存器TCMPn、TCNTn中。在定时器n的工作频率下，TCNTn开始减1计数，其值可以通过读取TCNTOn寄存器得知。
+    （3）当TCNTn的值等于TCMPn的值时，定时器n的输出管脚TOUTn反转；TCNTn继续减1计数。
+    （4）当TCNTn的值到达0时，其输出管脚TOUTn再次反转，并触发定时器n的中断
+    （5）当TCNTn的值到达0时，如果在TCON寄存器中将定时器n设置“自动加载”，则TCMPB0和TCNTB0寄存器的值被自动装入TCMP0和TCNT0寄存器中，下一个计数流程开始。
+    定时器n的输出管脚TOUTn初始状为高电平，以后在TCNTn的值等于TCMPn的值、TCNTn的值反转。也可以通过TCON寄存器设置其初始电平，这样TOUTn的输出就完全反相了。通过设置TCMPBn、TCNTBn的值可以设置管脚TOUTn输出信号的占空比，这就所谓的可调制脉冲（PWD），所以这些定时器又被称为PWM定时器。
+    下面讲解定时器的寄存器使用方法：
+     （1）TCFG0寄存器（TIMER CONFIGURATION）
+     	  位[7:0]、位[15:8]分别被用于控制预分频器0、1，它们的值为0～255.经过预分频器出来的时钟频率为：PCLK/{prescaler value + 1}。
+     （2）TCFG1寄存器（TIMER CONFIGURATION）
+          经过预分频器得到的时钟将被2分频、4分频、8分频、16分频，除这4种频率外，额外地，定时器0、1还可以工作在外接的TCLK0时钟下，定时器2、3、4还可以工作在外接的TCLK1时钟下。
+	  通过TCFG1寄存器来设置这5个定时器，分别工作于这5个频率中哪一个之下。这样，定时器n的工作或者是外接的TCLK0或TCLK1可以通过这个公式计算：
+	  定时器工作频率=PCLK/{prescaler value + 1} / {divider value}
+	  {prescaler value} = 0~255, {divider value} = 2, 4, 8, 16
+     （3）TCNTBn/TCMPBn寄存器（COUNT BUFFER REGISTER ＆ COMPARE BUFFER REGISTER）
+         n为0～4，这两个寄存器都只用到位[15:0]，TCNTBn中保存定时器的初始计数值，TCMPBn中保存比较值。它们的值在启动定时器时，被传到定时器内部寄存器TCNTn、TCMPn中。
+	 没有TCMPB4，因为定时器4没有输出引脚
+     （4）TCNTOn寄存器（COUNTER OBSERVATION）
+         n为0～4，定时器n被启动后，内部寄存器TCNTn在其工作时钟下不断减1计数，可以通过读取TCNTOn寄存器告知其值。
+     （5）TCON寄存器（TIMER CONTROL）
+         它有以下4个作用：
+	  a. 第一次启动定时器时“手动”将TCNTBn/TCMPBn寄存器的值装入内部寄存器TCNTn、TCMPn中。
+	  b. 启动、停止定时器
+	  c. 决定在定时器计数达到0时是否自动将TCNTBn/TCMPBn寄存器的值装入内部寄存器TCNTn、TCMPn中。
+	  d. 决定定时器的管脚TOUTn的输出电平是否反转。
+         在第一次使用定时器时，需要设置“手动更新”位为1以使TCNTBn/TCMPBn寄存器的值装入内部寄存器中，下一次如果还要设置这一位，需要先将它清0.
+
+三、WATCHDOG定时器
+    WATCHDOG定时器可以像一般16位定时器一样用于产生周期性的中断，也可以用于发出复位信号以重启失常的系统。它的结构与PWM定时顺类似。
+    WATCHDOG可以从PCLK分频出4种频率：16、32、64、128分频，使用的是8位预分频器。寄存器WTCNT按照其工作频率每次计数减1，在到达0时产生中断信号或输出复位信号。
+    第一次使用WATCHDOG定时器时需要往WTCNT寄存器中定入初始的计数值，然后当计数值到达0时自动从WATDAT寄存器中装入，开始下一个计数周期。
+    在正常运行中必须不断地重新设置WTCNT寄存器使其不为0，这样才能使系统不被重启，称为“喂狗”。如果程序崩溃了不能正常“喂狗”了，那么在计数值到达0以后系统将被自动重启，程序重新运行。
+    WATCHDOG定时器涉及到如下寄存器：
+    （1）WTCON寄存器（WATCHDOG TIMER CONTROL）
+     该寄存器的作用是设置预分频系数、选择工作的频率、决定是否使能中断及是否启用WATDOG功能（也就是是否输出复位信号）。这些功能分别由相应的位或多位控制，分为WATCHDOG功能、时钟选择（16？32？65？128？）、定时器启动、预分频系数（0～255）。
+     （2）WTDAT寄存器（WATCHDOG TIMER DATA）
+       WTDAT寄存器被用来决定WATCHDOG定时器的超时周期。当定时器启动后，如果计数达到0，WTDAT寄存器的值就会自动传入到WTCNT寄存器。
+     （3）WTCNT寄存器（WATCHDOG TIMER COUNT）
+      在启动WATDOG定时器前，必须往该寄存器写入初始计数值。在到时以后会自动装载WTDAT寄存器重新计数。
+
+四、MPLL和定时器操作实例
+    本实例中，首先启动MPLL提高系统时钟，然后初始化存储控制器使得SDRAM工作在新的HCLK下，并将定时器0设置为0.5s产生一次中断，中断处理将改变LED的状态。
+    本实例的重点是：设置／启动MPLL、根据HCLK设置存储控制器、初始化定时器0、定时器中断。
+
+    1.设置／启动MPLL
+      设置MPLL由clock_init函数来完成。本开发板的输入时钟频率Fin是12MHz，代码中将FCLK、HCLK、PCLK分别设置为200MHz、100MHz、50Hz。
+
+	#define S3C2410_MPLL_200MHZ ((0x5c << 12) | (0x04 << 4) | (0x00))
+	#define S3C2440_MPLL_200MHZ ((0x5c << 12) | (0x01 << 4) | (0x02))
+
+        void clock_init(void)
+	{
+		CLKDIVN = 0x03;           //FCLK:HCLK:PCLK=1:2:4,HDIVN=1,PDIVN=1
+		//如果HDIVN非0，CPU的总线模式应该从“fast bus mode”变为"asynchronous bus mode"
+		__asm__(
+			"mrc p15, 0, r1, c1, c0, 0\n"   //读出控制寄存器
+			"orr r1, r1, #0xc0000000\n"    //设置为"asynchronous bus mode
+			"mcr p15, 0, r1, c1, c0, 0\n"   //写入控制寄存器
+		);
+
+		if((GSTATUS1 == 0x324100000) || (GSTATUS1 == 0x32410002)){
+			MPLLCON = S3C2410_MPLL_200MHZ;
+		}else{
+			MPLLCON = S3C2440_MPLL_200MHZ; //现在，FCLK＝200MHz，HCLK＝100MHz，PCLK＝50MHz
+		}
+	}
+
+	2. 设置存储控制器
+	  memsetup函数被用来设置存储控制器。
+	  
+	  /* 设置存储控制器以使用SDRAM */
+	  void memsetup(void)
+	  {
+		  volatile unsigned long *p = (volatile unsigned long*)MEM_CTL_BASE;
+
+		  p[0] = 0x22011110 ;       //BWSCON
+		  p[1] = 0x00000700 ;       //BANKCON0
+		  p[2] = 0x00000700 ;       //BANKCON1
+		  p[3] = 0x00000700 ;       //BANKCON2
+		  p[4] = 0x00000700 ;       //BANKCON3
+		  p[5] = 0x00000700 ;       //BANKCON4
+		  p[6] = 0x00000700 ;       //BANKCON5
+		  p[7] = 0x00018005 ;       //BANKCON6
+		  p[8] = 0x00018005 ;       //BANKCON7
+
+		  /* REFRESH = 0x008C0000 + R_CNT(R_CNT = 2^11 + 1 - 100MHz * 7.8125uS)
+		     HCLK=12MHz: 0x008C07A3,
+		     HCLK=100MHz: 0x008C04F4
+		     */
+		  p[9] = 0x008C04F4;
+		  p[10] = 0x000000B1;      //BANKSIZE
+		  p[11] = 0x00000030;      //MRSRB6
+		  p[12] = 0x00000030;      //MRSRB7
+	  }
+
+          3. 初始化定时器0
+	     
+	     void timer0_init(void)
+	     {
+		     TCFG0 = 99;   //预分频器0＝99
+		     TCFG1 = 0x03;  //选择16分频
+		     TCNTB0 = 31250;  //0.5s触发一次中断
+		     TCON |= (1 << 1);  // 手动更新
+		     TCON = 0x09;       //自动加载，清除"手动更新位“，启动定时器0
+	     }
+
+          4. 定时器中断
+	     head.S中调用timer0_init函数之后，定时器0即开始工作了。然后调用init_irq函数，使能定时器0中断，并设置CPSR寄存器开启IRQ中断。以后每次定时器0计数到达0时就会触发中断。
+	     void init_irq(void)
+	     {
+		     //定时器0中断使能
+		     INTMSK &= (~(1 << 10));
+	     }
+
+	    发生定时器中断时，CPU将调用其中断服务程序Timer0_Handle，它在interrupt.c中：
+
+	    void Timer0_Handle(void)
+	   {
+		   //每次中断令4个LED改变状态
+		   if(INTOFFSET == 10){
+			   GPBDAT = ~(GPBDAT & (0xf << 5));
+		   }
+		   //清除中断
+		   SRCPND = 1 << INTOFFSET;
+		   INTPND = INTPND;
+	   }
+	   定时器0的中断使用SRCPND、INTPND寄存器中的位10来表示。中断服务程序Timer0_Handle先判断是不是定时器0的中断，如果是就反转4个LED的状态。
+

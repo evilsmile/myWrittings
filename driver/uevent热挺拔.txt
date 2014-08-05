@@ -1,0 +1,34 @@
+1. 做个实验，捕捉热挺拔事件
+  在主目录下新建个脚本文件a.sh，
+    #!/bin/sh
+    touch /tmp/new_device_123
+  然后su root; echo "/home/evilsmile/a.sh" >  /sys/kernel/uevent_helper。
+  最后插入U盘验证。可以发现每次重新插入U盘都会在/tmp/目录下生成new_device_123文件，捕捉到了热插拔事件。
+
+2. 回过头去看步骤1中的过程：
+  (1. 自定义处理文件的存储
+      在kernel/ksysfs.c文件中的函数uevent_helper_store(struct kobject *kobj,
+	                                           struct kobj_attribute *attr,
+	                                            const char *buf, size_t count)
+      该函数完成文件路径的拷贝，拷贝到char uevent_helper[UEVENT_HELPER_PATH_LEN]变量中。
+  (2. 内核中的处理
+      uevent_helper在lib/kobject_uevent.c文件中的kobject_uevent_env()中使用，
+       if (uevent_helper[0] && !kobj_usermode_filter(kobj)) {
+             ...
+	     argv [0] = uevent_helper;
+	     ...
+	     retval = call_usermodehelper(argv[0], argv,
+          		     env->envp, UMH_WAIT_EXEC);
+       }
+
+       call_usermodehelper()完成从内核调用用户空间函数。
+
+3. 设备驱动程序一般不会和这些太底层的kobject/kset家伙打交道，因为更高层次的device,bus和driver把kobject/kset那一层的细节实现都给封装了起来。所以设备热插拔的uevent事件最终的源头来自于device_add。下面看看device_add的源码，是如何实现uevent机制的：
+       <drivers/base/core.c>
+           int device_add(struct device *dev)
+	   {
+	      ...
+	      kobject_uevent(&dev->kobj, KOBJ_ADD);
+	      ...
+	   }
+   热插拔的核心实现就那一个函数调用，这里device_add对应的是KOBJ_ADD，那么移除设备自然对应KOBJ_REMOVE了。kobject_uevent函数最终调用的是kobject_uevent_env，后者才是真正干事的伙计。也就是上面提到的函数。

@@ -1,0 +1,1 @@
+cpio -id < space 进行解压，space是一个ascii cpio archive。

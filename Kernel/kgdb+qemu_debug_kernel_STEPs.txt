@@ -1,0 +1,4 @@
+1.安装qemu-system-i386
+2.编译出bzImage
+3.使用busybox编译出根文件系统
+4.用qemu-system-i386运行

@@ -1,0 +1,34 @@
+.nr HM 2i
+.ps 24
+.ft B
+How Happy I Am To Be Graduating
+(example)
+.ft R
+.ps 11
+.sp 0.5i
+This report describes how happy I am to be graduating this term.
+.sp 0.25i
+.ft B
+Sing
+.sp 0.25i
+.ft R
+I'm so happy, I could
+.ft I
+sing!
+.sp 0.25i
+.ft B
+Dance
+.sp 0.25i
+.ft R
+I'm so happy, I could
+.ft I
+dance!
+.sp 0.25i
+.ft B
+Smile
+.sp 0.25i
+.ft R
+I'm so happy, I could
+.ft I
+SMILE ALL THE TIME !
+.nr FM 2.5i

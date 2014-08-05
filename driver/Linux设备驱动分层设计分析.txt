@@ -1,0 +1,56 @@
+  Linux内核借用面向对象的思想，在设备驱动方面，为同类的设备设计了一个框架，而框架中的核心层则实现了该设备通用的一些功能。如果具体的设备不想使用核心层的函数，则可以重载它。如
+       return_type core_funca(xxxx_device *bottom_dev, param1_type param1, param1_type param2)
+       {
+	       if(bottom_dev->funca)
+		       return bottom_dev->funca(param1, param2);
+	       /* 核心层通用的funca代码 */
+	       ...
+       }
+       在上面的代码中，会检查底层设备是否重载了funca()，如果重载了，就调用底层的代码，否则使用通用层的。这样做的话，核心层的代码可以处理绝大多数该类设备的funca()对应的功能，只有少数特殊设备需要重新实现funca()。
+       另外一个例子是：
+	return_type core_funca(xxxx_device *bottom_dev, param1_type param1, param1_type param2)
+	{
+		/* 通用的步骤代码A */
+		...
+	 	bottom_dev->funca_ops1();
+		/* 通用的步骤代码B */
+		...
+		bottom_dev->funca_ops2();
+		/* 通用的步骤代码C */
+		...
+		bottom_dev->funca_ops3();
+	}
+        上述代码假定为了实现funca()，对于同类设备而言，操作流程一致，都要经过“通用代码A、底层ops1、通用代码B、底层ops2、通用代码C、底层ops3“这几步。分层设备明显带来的好处是，对于通用代码A、B、C，具体的底层驱动不需要再实现，而仅仅关心其底层的操作ops1、ops2、ops3。
+	这样的分层化设计在Linux的Input、RTC、MTD、I2C、SPI、TTY、USB等诸多设备驱动类型中屡见不鲜。
+
+
+    以Input输入设备驱动为例说明分层设计：
+    输入设备（如按键、键盘、触摸屏、鼠标等）是典型的字符设备，其一般的工作机理是底层在按键、触摸等运行发送时产生一个中断（或驱动通过timer定时查询），然后CPU通过SPI、I2C或外部存储器总线读取键值、坐标等数据，放入1个缓冲区，字符设备驱动管理该缓冲区，而驱动的read()接口让用户可以读取键值、坐标等数据。
+    显然，在这些工作中，只是中断、读值是设备相关的，而输入事件的缓冲区管理以及字符设备驱动的file_operations接口则对输入设备是通用的。基于此，内核设计了输入子系统，由核心层处理公共的工作。
+    输入核心提供了底层输入设备驱动程序所需的API，如分配、释放一个输入设备：
+         struct input_dev *input_allocate_device(void);
+	 void input_free_device(struct input_dev *dev);
+    input_allocate_device()返回的是一个input_dev的结构体，此结构体用于代表一个输入设备。
+    注册、注销输入设备用的是如下接口：
+         int __must_check input_register_device(struct input_dev*);
+	 void input_unregister_device(struct input_dev *);
+    报告输入事件用的如下接口：
+         void input_event(struct input_dev *dev, unsigned int type, unsigned int code, int val);
+	 void input_report_key(struct input_dev *dev, unsigned int code, int value);
+	 void input_report_rel(struct input_dev *dev, unsigned int code, int value);
+	 void input_report_abs(struct input_dev *dev, unsigned int code, int value);
+	 void input_sync(struct input_dev *dev);
+    而所有的输入事件，内核都用统一的数据结构来描述，这个数据结构是input_event：
+         struct input_event{
+		 struct timeval time;
+		 __u16 type;
+		 __u16 code;
+		 __s32 value;
+	 };
+    drivers/input/keyboard/gpio_keys.c基于input架构实现了一个通用的GPIO按键驱动。该驱动基于platform_driver架构，名为"gpio-keys"。它将硬件相关的信息（如使用的GPIO号、电平等）屏蔽在板文件platform_device的platform_data中，因此该驱动可应用于各个处理器，具有良好的跨平台性。
+
+
+    下一例子是RTC设备驱动。
+    RTC（实时钟）借助电池供电，在系统掉电的情况下依然可以行走。它通常还具有产生周期中断以及产生闹钟中断的能力，是一种典型的字符设备。作为一种字符设备驱动，RTC需要有file_operations中接口函数的实现，如open()、release()、read()、poll()、ioctl()等，而典型的IOCTL包括RTC_SET_TIME、RTC_ALM_READ、RTC_ALM_SET、RTC_IRQP_SET、RTC_IRQP_READ等，这些对于所有的RTC是通用的，只有底层的具体实现是设备相关的。
+    因此，drivers/rtc/rtc-dev.c实现了RTC驱动通用的字符设备驱动层，它实现了file_operations的成员函数以及一些关于RTC的通用的控制代码，并向底层导出了rtc_device_register()、rtc_device_unregister()用于注册和注销RTC；导出rtc_class_ops结构体用于描述底层的RTC硬件操作。这一RTC通用层实现的结果是，底层的RTC驱动不再需要关心RTC作为字符设备驱动的具体实现，也无需关心一些通用的RTC控制逻辑。
+    drivers/rtc/rtc-s3c.c实现了S3C6410的RTC驱动，可作参考。

@@ -1,0 +1,4 @@
+1.　实现开机自动启动qq.
+　　简单原理是这样的.　Android开机的时候会发送一次BOOT_COMPLETED的广播,在我们的应用程序里面用BroadReceiver来接收这个广播,并在重写的onReceiver()里启动新的应用程序.
+　　那么启动应用程序的方法呢?以qq为例.　用apktool将包反编译,在AndroidManifest.xml里找到对应的MAIN　Activity,然后用i.setComponent(new ComponentName("com.tencent.mobileqq", "com.tencent.mobileqq.activity.SplashActivity"));来启动就行了.
+   对了,还得加上 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);才行.　　具体可参考/home/evilsmile/Java_Workspace/android_toys/auto_start_on_power.　　

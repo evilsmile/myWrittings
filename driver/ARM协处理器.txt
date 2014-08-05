@@ -1,0 +1,247 @@
+ARM指令集-协处理器指令详解
+ 
+ARM可支持多达16个协处理器，主要的作用：ARM处理器初始化，ARM与协处理器的数据处理操作，ARM的寄存器与协处理器的寄存器之间传送数据，以及ARM协处理器的寄存器和存储器之间传送数据。共有5条：
+-CDP 协处理器数据操作指令
+-LDC 协处理器数据加载指令
+-STC 协处理器数据存储指令
+-MCR ARM的寄存器到协处理器的寄存器的数据传送
+-MRC 协处理器的寄存器到ARM的寄存器的数据传送
+1、CDP 指令
+CDP 指令的格式为：
+CDP{条件} 协处理器编码，协处理器操作码1，目的寄存器，源寄存器1，源寄存器2，协处理器操作码2。
+CDP 指令用于ARM 处理器通知ARM 协处理器执行特定的操作,若协处理器不能成功完成特定的操作，则产生未定义指令异常。其中协处理器操作码1 和协处理器操作码2 为协处理器将要执行的操作，目的寄存器和源寄存器均为协处理器的寄存器，指令不涉及ARM 处理器的寄存器和存储器。
+指令示例：
+CDP P3 ， 2 ， C12 ， C10 ， C3 ， 4 ；该指令完成协处理器 P3 的初始化
+2、LDC 指令
+LDC 指令的格式为：
+LDC{条件}{L} 协处理器编码,目的寄存器，[源寄存器]
+LDC 指令用于将源寄存器所指向的存储器中的字数据传送到目的寄存器中，若协处理器不能成功完成传送操作，则产生未定义指令异常。其中，{L}选项表示指令为长读取操作，如用于双精度数据的传输。
+指令示例：
+LDC P3 ， C4 ， [R0] ；将 ARM 处理器的寄存器 R0 所指向的存储器中的字数据传送到协处理器 P3 的寄存器 C4 中。
+3、STC 指令
+STC 指令的格式为：
+STC{条件}{L} 协处理器编码,源寄存器，[目的寄存器]
+STC 指令用于将源寄存器中的字数据传送到目的寄存器所指向的存储器中，若协处理器不能成功完成传送操作，则产生未定义指令异常。其中，{L}选项表示指令为长读取操作，如用于双精度数据的传输。
+指令示例：
+STC P3 ， C4 ， [R0] ；将协处理器 P3 的寄存器 C4 中的字数据传送到 ARM 处理器的寄存器R0 所指向的存储器中。
+4、MCR 指令
+MCR 指令的格式为：
+MCR{条件} 协处理器编码，协处理器操作码1，源寄存器，目的寄存器1，目的寄存器2，协处理器操作码2。
+MCR 指令用于将ARM 处理器寄存器中的数据传送到协处理器寄存器中,若协处理器不能成功完成操作，则产生未定义指令异常。其中协处理器操作码1 和协处理器操作码2 为协处理器将要执行的操作，源寄存器为ARM 处理器的寄存器，目的寄存器1 和目的寄存器2 均为协处理器的寄存器。
+指令示例：
+MCR P3 ， 3 ， R0 ， C4 ， C5 ， 6 ；该指令将 ARM 处理器寄存器 R0 中的数据传送到协处理器 P3 的寄存器 C4 和 C5 中。
+5、MRC 指令
+MRC 指令的格式为：
+MRC{条件} 协处理器编码，协处理器操作码1，目的寄存器，源寄存器1，源寄存器2，协处理器操作码2。
+MRC 指令用于将协处理器寄存器中的数据传送到ARM 处理器寄存器中,若协处理器不能成功完成操作，则产生未定义指令异常。其中协处理器操作码1 和协处理器操作码2 为协处理器将要执行的操作，目的寄存器为ARM 处理器的寄存器，源寄存器1 和源寄存器2 均为协处理器的寄存器。
+指令示例：
+MRC P3 ， 3 ， R0 ， C4 ， C5 ， 6 ；该指令将协处理器 P3 的寄存器中的数据传送到 ARM 处理器寄存器中.
+ 
+ 
+ARM920T 有两个具体协处理器
+1.CP14调试通信通道协处理器
+调试通信通道协处理器DCC(the Debug Communications Channel)提供了两个32bits寄存器用于传送数据，还提供了6bits通信数据控制寄存器控制寄存器中的两个位提供目标和主机调试器之间的同步握手。
+此控制寄存器中的两个位提供目标和主机调试器之间的同步握手：
+位 1（W 位） 从目标的角度表示通信数据写入寄存器是否空闲：
+W = 0 目标应用程序可以写入新数据。
+W = 1 主机调试器可以从写入寄存器中扫描出新数据。
+位 0（R 位） 从目标的角度表示通信数据读取寄存器中是否有新数据：
+R = 1 有新数据，目标应用程序可以读取。
+R = 0 主机调试器可以将新数据扫描到读取寄存器中。
+注意
+调试器不能利用协处理器 14 直接访问调试通信通道，因为这对调试器无意义。 但调试器可使用扫描链读写 DCC 寄存器。 DCC 数据和控制寄存器可映射到 EmbeddedICE 逻辑单元中的地址。 若要查看 EmbeddedICE 逻辑寄存器，请参阅您的调试器和调试目标的相关文档。
+通信数据读取寄存器
+用于接收来自调试器的数据的 32 位宽寄存器。 以下指令在 Rd 中返
+回读取寄存器的值：
+MRC p14, 0, Rd, c1, c0
+ 
+通信数据写入寄存器
+用于向调试器发送数据的 32 位宽寄存器。 以下指令将 Rn 中的值写
+到写入寄存器中：
+MCR p14, 0, Rn, c1, c0
+ 
+注意
+有关访问 ARM10 和 ARM11 内核 DCC 寄存器的信息，请参阅相应的技术参考手册。 ARM9 之后的各处理器中，所用指令、状态位位置以及对状态位的解释都有所不同。
+目标到调试器的通信
+这是运行于 ARM 内核上的应用程序与运行于主机上的调试器之间的通信事件顺序：
+1. 目标应用程序检查 DCC 写入寄存器是否空闲可用。 为此，目标应用程序使用 MRC 指令读取调试通信通道控制寄存器，以检查 W 位是否已清除。
+2. 如果 W 位已清除，则通信数据写入寄存器已清空，应用程序对协处理器14 ，使用 MCR 指令将字写入通信数据写入寄存器。 写入寄存器操作会自动设置W 位。如果 W 位已设置，则表明调试器尚未清空通信数据写入寄存器。此时，如果应用程序需要发送另一个字，它必须轮询 W 位，直到它已清除。
+3. 调试器通过扫描链 2 轮询通信数据控制寄存器。 如果调试器发现 W 位已设置，则它可以读 DCC 数据寄存器，以读取应用程序发送的信息。 读取数据的进程会自动清除通信数据控制寄存器中的 W 位。
+以下代码显示了这一过程
+AREA OutChannel, CODE, READONLY
+ENTRY
+MOV r1,#3 ; Number of words to send
+ADR r2, outdata ; Address of data to send
+pollout
+MRC p14,0,r0,c0,c0 ; Read control register
+TST r0, #2
+BNE pollout ; if W set, register still full
+write
+LDR r3,[r2],#4 ; Read word from outdata
+; into r3 and update the pointer
+MCR p14,0,r3,c1,c0 ; Write word from r3
+SUBS r1,r1,#1 ; Update counter
+BNE pollout ; Loop if more words to be written
+MOV r0, #0x18 ; Angel_SWIreason_ReportException
+LDR r1, =0x20026 ; ADP_Stopped_ApplicationExit
+SVC 0x123456 ; ARM semihosting (formerly SWI)
+outdata
+DCB "Hello there!"
+END
+调试器到目标的通信
+这是运行于主机上的调试器向运行于内核上的应用程序传输消息的事件顺序：
+1. 调试器轮询通信数据控制寄存器的 R 位。 如果 R 位已清除，则通信数据读取寄存器已清空，可将数据写入此寄存器，以供目标应用程序读取。
+2. 调试器通过扫描链 2 将数据扫描到通信数据读取寄存器中。 此操作会自动设置通信数据控制寄存器中的 R 位。
+3. 目标应用程序轮询通信数据控制寄存器中的 R 位。 如果该位已经设置，则通信数据读取寄存器中已经有数据，应用程序可使用 MRC 指令从协处理器14 读取该数据。 同时，读取指令还会清除 R 位。
+以下显示的目标应用程序代码演示了这一过程
+AREA InChannel, CODE, READONLY
+ENTRY
+MOV r1,#3 ; Number of words to read
+LDR r2, =indata ; Address to store data read
+pollin
+MRC p14,0,r0,c0,c0 ; Read control register
+TST r0, #1
+BEQ pollin ; If R bit clear then loop
+read
+MRC p14,0,r3,c1,c0 ; read word into r3
+STR r3,[r2],#4 ; Store to memory and
+; update pointer
+SUBS r1,r1,#1 ; Update counter
+BNE pollin ; Loop if more words to read
+MOV r0, #0x18 ; Angel_SWIreason_ReportException
+LDR r1, =0x20026 ; ADP_Stopped_ApplicationExit
+SVC 0x123456 ; ARM semihosting (formerly SWI)
+AREA Storage, DATA, READWRITE
+indata
+DCB "Duffmessage#"
+END
+ 
+ 
+ 
+CP15系统控制协处理器
+CP15 —系统控制协处理器 （the system control coprocessor）他通过协处理器指令MCR和MRC提供具体的寄存器来配置和控制caches、MMU、保护系统、配置时钟模式（在bootloader时钟初始化用到）
+CP15的寄存器只能被MRC和MCR（Move to Coprocessor from ARM Register ）指令访问
+MCR{cond} p15,,,,,
+	MRC{cond} p15,,,,,
+	其中L位用来区分MCR(L=1)和MRC(L=0)操作. CP15包括15个具体的寄存器如下
+	-R0：ID号寄存器
+	-R0：缓存类型寄存器
+	-R1：控制寄存器
+	-R2：转换表基址寄存器（Translation Table Base --TTB）
+	-R3：域访问控制寄存器（Domain access control ）
+	-R4：保留
+	-R5：异常状态寄存器（fault status -FSR）
+	-R6：异常地址寄存器（fault address -FAR）
+	-R7：缓存操作寄存器
+	-R8：TLB操作寄存器
+	-R9：缓存锁定寄存器
+	-R10：TLB 锁定寄存器
+	-R11-12&14：保留
+	-R13：处理器ID
+	-R15：测试配置寄存器 2-24
+	要注意有2个R0，根据MCR操作数的不同传送不同的值，这也一个只读寄存器
+	-R0：ID号寄存器 这是一个只读寄存器，返回一个32位的设备ID号，具体功能参考ARM各个系列型号的的CP15 Register 0说明.
+	MRC p15, 0, , c0, c0, {0, 3-7} ;returns ID
+	以下为CP15的一些应用示例
+	U32 ARM_CP15_DeviceIDRead(void)
+{
+	U32 id;
+	__asm { MRC P15, 0, id, c0, c0; }
+	return id;
+}
+ 
+void ARM_CP15_SetPageTableBase(P_U32 TableAddress)
+{
+	__asm { MCR P15, 0, TableAddress, c2, c0, 0; }
+}
+ 
+void ARM_CP15_SetDomainAccessControl(U32 flags)
+{
+	__asm { MCR P15, 0, flags, c3, c0, 0; }
+}
+ 
+void ARM_CP15_ICacheFlush()
+{
+	unsigned long dummy;
+	 
+	__asm { MCR p15, 0, dummy, c7, c5, 0; }
+}
+ 
+void ARM_CP15_DCacheFlush()
+{
+	unsigned long dummy;
+	 
+	__asm { MCR p15, 0, dummy, c7, c6, 0; }
+}
+ 
+void ARM_CP15_CacheFlush()
+{
+	unsigned long dummy;
+	 
+	__asm { MCR p15, 0, dummy, c7, c7, 0; }
+}
+ 
+void ARM_CP15_TLBFlush(void)
+{
+	unsigned long dummy;
+	 
+	__asm { MCR P15, 0, dummy, c8, c7, 0; }
+}
+ 
+void ARM_CP15_ControlRegisterWrite(U32 flags)
+{
+	__asm { MCR P15, 0, flags, c1, c0; }
+}
+ 
+void ARM_CP15_ControlRegisterOR(U32 flag)
+{
+	 
+	__asm {
+		mrc p15,0,r0,c1,c0,0
+			mov r2,flag
+			orr r0,r2,r0
+			mcr p15,0,r0,c1,c0,0
+	}
+	 
+}
+ 
+void ARM_CP15_ControlRegisterAND(U32 flag)
+{
+	 
+	__asm {
+		mrc p15,0,r0,c1,c0,0
+			mov r2,flag
+			and r0,r2,r0
+			mcr p15,0,r0,c1,c0,0
+	}
+	 
+}
+ 
+void ARM_MMU_Init(P_U32 TableAddress)
+{
+	ARM_CP15_TLBFlush();
+	ARM_CP15_CacheFlush();
+	ARM_CP15_SetDomainAccessControl(0xFFFFFFFF);
+	ARM_CP15_SetPageTableBase(TableAddress);
+}
+void Enable_MMU (void)
+{
+	__asm {
+		mrc p15,0,r0,c1,c0,0
+			mov r2, #0x00000001
+			orr r0,r2,r0
+			mcr p15,0,r0,c1,c0,0
+	}
+	printf("MMU enabled\n");
+}
+ 
+void Disable_MMU (void)
+{
+	__asm {
+		mrc p15,0,r0,c1,c0,0
+			mov r2, #0xFFFFFFFE
+			and r0,r2,r0
+			mcr p15,0,r0,c1,c0,0
+	}
+	printf("MMU disabled\n");
+}

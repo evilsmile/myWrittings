@@ -1,0 +1,175 @@
+1. platform_driver和platform_device是如何建立关联的？
+   通过名字。
+   在platform_driver结构中有个.driver.name成员，而相应的设备在平台相关文件(arch/platform/arm/plat-s3c24xx/Devs.c)中，platform_device结构中有个.name成员。这个设备已经在平台初始化时使用platform_add_devices函数添加到了总线上，因此现在总线上已经挂上了一个名为name的设备了。
+   在加载驱动模块时，执行如watchdog_init函数，调用platform_driver_register(&s3c2410wdt_driver)；将这个驱动注册到platform总线上，同时寻找在platform总线上与之匹配的设备。调用顺序为
+      platform_driver_register --> 
+      driver_register --> 
+      bus_add_driver --> 
+      driver_attach --> 
+      bus_for_each_dev --> 
+      __driver_attach --> 
+      driver_match_device --> 
+      platform的match方法：of_platform_bus_match。
+      仔细查看这个方法会发现实际上就是匹配了设备的名称和驱动的名称，只要这两个名字一样，就匹配成功。如果匹配成功，则在__driver_attach中继续调用driver__probe_device方法，这个方法最终调用的就是platform_driver中的probe方法。至此完成了驱动程序与设备的关联。
+
+2. 既然最正确的驱动程序中不应该包含平台相关的代码，那么驱动是怎样得到平台的信息呢？
+   使用platform_driver中的probe方法。即driver对device的探测。
+   在probe方法中使用platform_get_resource得到设备的资源信息，如IO内存资源、中断等。
+
+3. 具体操作硬件的代码在哪？
+   以看门狗为例，直接对硬件进行操作的函数有：
+   s3c2410wdt_start --开始开始看门狗计时器
+   s3c2410wdt_stop --停止看门狗计时器
+   s3c2410wdt_keepalive --“喂狗”
+   s3c2410wdt_set_heartbeat -- 设置“心跳”，就是计数周期
+   s3c2410wdt_suspend --挂起看门狗，就是在关闭看门狗之前保存状态
+   s3c2410wdt_resume --恢复看门狗计时器
+   这些函数会被struct file_operations中定义的“标准”函数调用。
+
+4. 这些操作硬件的代码在驱动程序中怎么组织的？
+   还是以看门狗为例：
+		|---> platform_driver_register()
+		|---> platform_driver_unregister()
+		|
+		|
+		|
+		|
+		|
+   平台设备-----|
+   		|
+   		|						 |---> .probe = s3c2410wdt_probe,
+   		|						 |---> .remove = _devexit_p(s3c2410wdt_remove),
+   		|						 |---> .shutdown = s3c2410wdt_shutdown,
+   		|						 |---> .suspend = s3c2410wdt_suspend,
+   		|						 |---> .resume = s3c2410wdt_resume,
+   		|						 |
+   		|--->struct platform_driver s3c2410wdt_driver  --|
+   		 						 |---> .driver = {
+   		 						 |             .owner = THIS_MODULE,
+   		 						 |             .name = "s3c1410-wdt",
+   		 						 |      };
+
+		|---> misc_register()
+		|---> misc_unregister()
+		|
+		|
+		|
+		|
+		|
+   混杂设备-----|
+   		|
+   		|						 |---> .owner = THIS_MODULE,
+   		|						 |---> .write = s3c2410wdt_write,
+   		|						 |---> .llseek = no_llseek,
+   		|						 |---> .unlocked_ioctl = s3c2410wdt_ioctl,
+   		|						 |---> .open = s3c2410wdt_open,
+   		|						 |
+   		|--->struct file_operations s3c2410wdt_fops    --|
+   		 						 |---> .release = s3c2410wdt_release,
+
+
+  其中在s3c2410wdt_driver和s3c2410wdt_fops中定义的函数会间接调用到上面提到的那些函数进行硬件相关的操作。
+
+
+5. 设备号的作用
+   主设备号用来标识与设备文件相连的驱动程序。次编号被驱动程序用来辨别操作的是哪个设备。
+   主设备号用来反映“设备类型”，次设备号用来区分“同类型的设备”。
+   内核中用dev_t描述设备号，实质为unsigned int 32位整数，其中高12位为主设备号，低20位为次设备号。
+   通过宏MAJOR(dev_t dev)可以从dev_t中分解出主设备号，通过MINOR(dev_t dev)分解出次设备号。
+
+   在Linux内核中设备号可以采用静态申请和动态分配两种方法。
+     1). 静态申请：根据Documentation/devices.txt，确定一个没有使用的主设备号，然后调用register_chrdev_region函数注册设备号。这种方法简单，但是可能会导致设备号不冲突，而使驱动程序无法注册。
+     2). 动态申请：调用alloc_chrdev_region分配设备号。简单，但无法在安装驱动前创建设备文件，因为还没有分配到主设备号。所以在安装好驱动后，从/proc/devices中查询设备号。
+   不论使用体积方法分配设备号，都应该在不再使用它们时释放这些设备号，通过函数unregister_chrdev_region。
+
+6. 怎么创建设备文件
+   设备文件的创建有两种方法，一是使用mknod命令手工创建，二是自动创建。
+   从Linux 2.6.13开始，devfs不复存在，udev成为devfs的替代。相比devfs, udev(mdev)存在于应用层。利用udev(mdev)来实现设备文件的自动创建很简单，在驱动初始化的代码里调用class_create为该设备创建一个class，再为每个设备调用device_create创建对应的设备。如：
+        struct class *myclass = class_create(THIS_MODULE, "my_driver");
+	device_create(myclass, NULL, MKDEV(major_num 0), NULL), "my_device");
+   当驱动被加载时，udev(mdev)就会自动在/dev下创建my_device设备文件。
+
+7. Linux字符设备驱动程序设计中的重要数据结构？
+   有3个非常重要的数据结构：struct file, struct inode, struct file_operations。
+       (1. struct file代表一个打开的文件。系统中每个打开的文件在内核空间都有一个关联的struct file。它由内核在打开文件时创建，在文件关闭后释放。其中有重要成员loff_t f_pos和struct file_operations *f_op。
+       (2. struct inode用来记录文件在物理上的信息。因此它和代表打开文件的file结构是不同的。一个文件可以对应多个struct file，但是只有一个struct inode。其中重要成员包括dev_t i_rdev;设备号。
+       (3. struct file_operations是一个函数指针的集合，定义能在设备上进行的操作。
+
+8. 设计字符设备驱动的步骤？
+   Step1：设备注册。
+      在linux 2.6内核中，字符设备使用struct cdev来描述。字符设备的注册可分为3个步骤：分配cdev、初始化cdev、添加cdev，分别调用cdev_alloc()、cdev_init()和cdev_add()来完成。
+   Step2: 实现设备所支持的操作。
+   Step3: 设备注销。
+      调用cdev_del()函数来完成。
+
+9. 寄存器与内存的区别在哪？
+   寄存器和RAM的主要不同在于寄存器操作有边际效果（即副作用）：读取某个地址时可以导致该地址内容发生变化，比如很多设备的中断状态寄存器只要一读取，便自动清零。
+
+10. 内存与I/O的异同？
+   在X86处理器中存在I/O空间的概念，I/O空间是相对内存空间而言的，他们是彼此独立的地址空间，在32位的x86系统中，I/O空间大小是64K，内在空间大小为4G。
+   其中，
+   X86：支持内存空间和I/O空间
+   ARM：只支持内存空间
+   MIPS：只支持内存空间
+   PowerPC：只支持内存空间
+
+11. I/O端口和I/O内存的区别？
+    I/O端口：当一个寄存器或内存位于IO空间时，称其为IO端口。
+    I/O内存：当一个寄存器或内存位于内存空间时，称其为IO内存。
+
+12. 怎么操作IO端口？
+    对IO端口操作需3个步骤：申请，访问，释放。
+     (1. 申请
+        内核提供了一套函数来允许驱动申请他需要的IO端口，其中的核心函数是：
+	  struct resource* request_region(unsigned long first, unsigned long n, const char *name);
+	这个函数告诉内核，将要使用从first开始的n个端口，name是设备的名字。
+	系统中端口的分配情况记录在/proc/ioport中。
+     (2. 访问
+        I/O端口可分为8位、16位和32位端口。Linux内核头文件<asm/io.h>中定义了下列内联函数来访问IO端口：
+	  unsigned inb(unsigned port);
+	  void outb(unsigned char byte, unsigned port);
+	  unsigned inw(unsigned port);
+	  void outw(unsigned short word, unsigned port);
+	  unsigned inl(unsigned port);
+	  void outl(unsigned longword, unsigned port);
+     (3. 释放
+         当用完一组IO端口（通常在驱动卸载时），应使用如下函数把它们返还给系统：
+	    void release_region(unsigned long start, unsigned long n);
+
+13. 怎么操作IO内存？
+    步骤包括：申请、映射、访问、释放
+     (1. 申请
+         内核提供了一套函数来允许驱动申请它需要的IO内存，其中核心函数是：
+	  struct resource* request_mem_region(unsigned long start, unsigned long len, char *name);
+	 这个函数申请一个从start开始，长度为len字节的内存区。如果成功，返回非NULL。
+	 所有已经在使用的IO内存在/proc/iomem中列出。
+     (2. 映射IO内存
+        在访问IO内存之前，必须进行物理地址到虚拟地址的映射，ioremap函数具有此功能：
+	  void* ioremap(unsigned long phys_addr, unsigned long size);
+     (3. 访问IO内存
+        访问IO内在的正确方法是通过一系列内核提供的函数：
+	从IO内存读，使用下列之一：
+	  unsigned ioread8(void *addr);
+	  unsigned ioread16(void *addr);
+	  unsigned ioread32(void *addr);
+	写IO内存，使用下列之一：
+	  void write8(u8 value, void *addr);
+	  void write16(u16 value, void *addr);
+	  void write32(u32 value, void *addr);
+	老版本的IO内存访问函数：
+	  从IO内存读，使用下列之一：
+	    unsigned readb(address);
+	    unsigned readw(address);
+	    unsigned readl(address);
+	  写IO内存，使用下列之一：
+	    unsigned writeb(unsigned value, address);
+	    unsigned writew(unsigned value, address);
+	    unsigned writel(unsigned value, address);
+     (4. 释放IO内存
+         当IO内存不再需要使用时应当释放，步骤如下：
+	  (a. void iounmap(void *addr);
+	  (b. void release_mem_region(unsigned long start, unsigned long len);
+14. 混杂字符设备？
+   在Linux系统中，存在一类字符设备，它们共享一个主设备号(10)，但次设备号不同，我们称这类设备为混杂设备(miscdevice)。所有的混杂设备形成一个镮，对设备访问时内核根据次设备号查找到相应的miscdevice设备。
+
+

@@ -1,0 +1,238 @@
+一、串口驱动程序的4层结构
+   终端设备各类有很多，比如串行终端 、键盘、显示器、通过网络实现的终端等。串口属于一种终端设备，它的驱动程序并不仅仅是简单的初始化硬件、接收／发送数据。在基本硬件操作的基础上，还增加了很多软件的功能，这是一个多层次的驱动程序。
+   串口驱动程序从上到下分为4层：
+ 		终端设备层(drivers/char/tty_io.c,tty_ioctl.c ...)
+		     |
+   		   行规程 ( drivers/char/n_tty.c ...)
+		     |
+		串口抽象层 (drivers/serial/serial_core.c,include/linux/serial_core.h)
+		     |
+		串口芯片层(drivers/serial/s3c2410.c or 8250.c)
+		     |
+		   硬件(s3c2410自带的串口，or 8250等标准串口)
+   终端设备层和行规程下面还有其他类型的层次与串口的层次并列，如键盘／显示器等。
+   终端设备层向上提供统一的访问接口，使得用户不必关注具体终端的类型。
+   行规程的作用是指定数据交互的“规矩”，比如流量控制、对输入的数据进行变换处理等。常见的用途有：将TAB转换为8个空格、将删除键转换为删除前面输入的字符、收到“Ctrl＋c”字符时发送SIGINT等。
+   串口抽象层和串口芯片层都属于低层的驱动程序，它们用来操作硬件。串口抽象层将各类的共性概括出来，它也是低层串口驱动的核心部分，比如根据串口芯片层提供的地址识别串口类型、设置串口波特率等。
+   串口芯片层与具体芯片相关，主要是向串口抽象层提供串口芯片所用的资源（如访问地址、中断号），还进行一些与芯片相关的设置。
+
+二、情景分析
+   1. 串口接收到“Ctrl＋C”时
+   处理流程如下：
+   （1）串口接收到字符“Ctrl＋C”（ASCII码为0x03）后触发中断。假设中断处理函数是drivers/serial/8250.c中的serial8250_interrupt，它属于最低层的函数。
+   （2）中断处理函数最终会将这个字符放入tty层的缓冲区中，每个终端设备都有一个接收缓冲区，里面保存的是原始数据。调用顺序如下：
+          serial8250_interrupt (串口芯片层) ->
+	  	serial8250_handle_port (串口芯片层) ->
+			receive_chars (串口芯片层) ->
+				uart_insert_char (串口抽象层) ->
+					tty_insert_flip_char (终端设备)。
+   （3）中断处理函数还要调用其他函数进一步处理原始数据，它最终会向当前进程发送SIGINT信号，让它退出。调用顺序如下：
+          serial8250_interrupt (串口芯片层) ->
+	  	serial8250_handle_port (串口芯片层) ->
+			receive_chars (串口芯片层) ->
+				uart_insert_char (串口抽象层) ->
+					tty_insert_flip_char (终端设备)//保存接收到的数据及它的标志
+				tty_flip_buffer_push (终端设备层) ->
+					flush_to_ldisc(终端设备层) ->
+						disc->receive_buf, 即n_tty_receive_buf (行规程) ->
+							n_tty_receive_char (行规程) ->
+								n_tty_receive_char (终端设备层) -> /* 根据字符进行不同的处理 */
+								发送SIGINT信号：isig (行规程)  //对于“Ctrl＋C”，发信号
+
+
+   2. 串口接收普通数据时
+   串口的接口简单，但是串口驱动程序中的分层思想、通过中断处理函数或定时器处理函数来完成硬件的操作以及释放CPU资源的技巧等，在内核中普遍使用。
+   以串口接收到字符为例，在控制台上输入“ls”并按回车时，发生了如下过程：
+   （1）shell程序一直在休眠，等待接收到“足够”或“合适”的字符；
+   （2）串口接收到字符“l”，把它保存起来；
+   （3）串口输出字符“l”，这样在控制台上就可以看见“1”；
+   （4）类似的，串口接收到字符“s”，保存、输出（回显）
+   （5）串口接收到回车符，唤醒shell进程
+   （6）shell进程就会读取这些字符决定做什么事。
+   这些过程涉及的函数调用与上面对“Ctrl＋C”的处理类似，只是在n_tty_receive_char函数中，对于普通字符将调用echo_char函数将它回显；对于回车符，回显之后还要调用waitqueue_active函数唤醒等待数据的进程。
+
+   3. 串口发送数据时
+   往串口上发送数据时，在U-Boot中是发送一个字符后，循环查询串口状态，当串口再次就绪时，发送下一个字符。如此循环，直到发送完所有字符。在查询状态的过程中，耗费CPU资源，效率低下。
+   在Linux中，串口字符的发送也是通过中断来驱动的。比如在串口控制台上运行一个程序，里面有“printf("hello world!")”字样的语句，它的函数调用关系如下：
+      tty_write (终端设备层) ->
+      	do_tty_write (终端设置层) ->
+		write_chan (行规程) ->
+			add_wait_queue(&tty->write_wait, &wait); //加入等待队列
+			tty->driver->write,即uart_write (串口抽象层) ->
+				//数据先被保存在串口端口（port）的缓冲区中，然后启动发送
+				uart_start (串口抽象层)  ->
+					__uart_start (串口抽象层) ->
+						port->ops->start_tx,即serial8250_start_tx (串口芯片层) ->
+							up->ier |= UART_IER_THRI;
+							serial_out(up, UART_IER, up->ier); //这两行使能串口发送中断，字符的发送在中断函数中进行
+			schedule() //假如uart_write没立刻发送完数据，进程休眠
+
+
+      可见，即使是发送数据，也没有使用循环查询的方法，它只是把数据保存起来，然后开启发送中断。当串口芯片内部的发送缓冲区可以再次存入数据时，这个中断被触发；在中断处理函数中将数据一点点地发送给串口芯片。
+      仍以drivers/serial/8250.c中的serial8250_interrupt函数为例，发送数据时的调用关系如下：
+	serial8250_interrupt (串口芯片层) ->
+		serial8250_handle_port (串口芯片层) ->
+			transmit_chars (串口芯片层) ->
+				serial_out (串口芯片层) //将数据写入给串口芯片
+				//如果已经发送完毕，唤醒进程
+				uart_write_wakeup, 将调用uart_tasklet_action(串口抽象层) ->
+					tty_wakeup (终端设备层) ->
+						/* 与上面write_chan中的"add_wait_queue(&tty->write_wait, &wait)"对应*/
+						wake_up_interruptible(&tty->write_wait); /* 唤醒“等待发送完毕”的进程 */
+					//如果已经发送完毕，则禁止发送中断
+					__stop_tx (串口芯片层)
+
+
+三、扩展串口驱动程序移植
+    扩展串口芯片16C2550属于标准串口，内核的串口驱动程序对它支持良好。可以大胆假设，移植的工作就是：告诉这些驱动程序这个扩展芯片所使用的资源，即访问地址和中断号。
+    与具体芯片相关的驱动代码在“串口芯片层”。对于16C2550，它就是drivers/serial/8250.c。入口函数为serial8250_init，它被用来向上层驱动程序注册串口的物理信息，只要弄清楚了这个函数就知道怎么增加对扩展串口的支持了：
+               	static int __init serial8250_init(void)
+		{
+			...
+			ret = uart_register_driver(&serial8250_reg); /* 注册串口终端设备，未和具体串口挂钩  */
+			...
+			serial8250_isa_devs = platform_device_alloc("serial8250", /* 分配platform_device结构 */, PLAT8250_DEV_LEGACY);
+			...
+			ret = platform_device_add(serial_isa_devs); //加入内核设备层
+			//枚举old_serial_port中定义的串口
+			serial8250_register_ports(&serial8250_reg, &serial8250_isa_devs->dev);
+			//枚举内核设备层中的串口
+			ret = platform_driver_register(&serial8250_isa_devs);
+			...
+		}
+     代码中调用uart_register_driver函数向“终端设备层”注册驱动serial8250_reg，它指定了终端设备的名称、主次设备号等：
+              	static struct uart_driver serial8250_reg = {
+			.owner = THIS_MODULE,
+			.driver_name = "serial", /* 可以使用cat /proc/tty/drivers查看 */
+			.dev_name = "ttyS",
+			.major = TTY_MAJOR, //4
+			.minor = 64, 
+			.nr = UART_NR,   //支持的最大串口数
+			.cons = SERIAL8250_CONSOLE, //控制台，如果非空，可以用作控制台，比如"console=ttyS0"等
+		};
+     代码中还调用platform_driver_register函数向内核注册一个平台驱动serial8250_isa_driver，它用来枚举名称为"serial8250"的设备。
+     内核根据其他方式确定了很多设备的信息，这些设备被称为平台设备；加载平台驱动程序时将驱动程序与平台设备逐个比较，如果两者匹配，就使用这个驱动来进一步处理（枚举）。匹配的方法是：设备名称和驱动名称是否一样。
+     serial8250_isa_devs结构定义：
+     		static struct platfomr_driver serail8250_isa_driver = {
+			.probe = serial8250_probe,
+			.remove = __devexit_p(serial8250_remove),
+			.suspend = serial8250_suspend,
+			.resume = serial8250_resume,
+			.driver = {
+				.name = "serial8250",
+				.owner = THIS_MODULE,
+			},
+		};
+     可见，serial8250_isa_driver中驱动名称为"serial8250",只要内核中有相同名称的平台设备，platform_driver_register函数最终会调用serial8250_probe函数来枚举它。
+     总之，移植扩展串口的工作主要是构建一个平台设备的结构，在里面指定串口的物理信息。
+
+
+     -----------------------------------------------
+     修改代码以支持扩展串口：
+     串口的物理信息主要有两类：访问地址、中断号，所以只要指明了这两点，并使它们可用，就可以驱动串口了。“使它们可用”的意思是：设置相关的存储控制器以适当的位宽访问这些地址，注册中断时指明合适的触发方式。
+     1. 构建串口平台设备的数据结构
+       以arm/arm/mach-s3c2410/mach-bast.c中部分代码为例：
+       		static struct plat_serial8250_port bast_sio_data[] = {
+			...
+		};
+		static struct platform_device bast_sio = {
+			.name = "serial8250",
+			.id = PLAT8250_DEV_PLATFORM,
+			.dev = {
+				.platform_data = &bast_sio_data,
+			},
+		};
+		static struct platform_device *bast_devices[] __initdata = {
+			...
+			&bast_sio,
+		};
+        在arch/arm/plat-s3c24xx/common-smdk.c中依照mach-bast.c文件增加如下3段代码。增加的代码都以宏CONFIG_SERIAL_EXTEND_S3C24xx包含起来：
+	（1）增加要包含的头文件
+	 #ifdef CONFIG_SERIAL_EXTEND_S3C24xx
+	 #include <linux/serial_8250.h>
+	 #endif
+	（2）增加平台设备数据结构
+	 #ifdef CONFIG_SERIAL_EXTEND_S3C24xx
+	 static struct plat_serial8250_port s3c_device_8250_data[] = {
+		 //扩展串口A
+		 [0] = {
+			 .mapbase = 0x28000000,
+			 .irq = IRQ_EINT18,
+			 //自动配置串口，即自动检测它的类型、FIFO大小等；
+			 //需要将.mapbase指定的物理地址映射为虚拟地址
+			 //共享中断
+			 .flags = (UPF_BOOT_AUTOCONF | UPF_IOREMAP | UPF_SHARED_IRQ),
+			 //使用“内存地址”来访问串口A
+			 .iotype = UPIO_MEM,
+			 //用来计算串口的寄存器地址
+			 //假设mapbase映射后的地址为membase，寄存器序号为index，则它的访问地址为: membase + (index << regshift)。当连接的总线宽度为8时regshift为0，16时为1，32时为2。
+			 .regshift = 0,
+
+			 .uartclk = 115200 * 16,
+		 },
+		 //扩展串口B
+		 [1] = {
+			 .mapbase = 0x29000000,
+			 .irq = IRQ_EINT17,
+			 .flags = (UPF_BOOT_AUTOCONF | UPF_IOREMAP | UPF_SHARED_IRQ),
+			 .iotype = UPIO_MEM,
+			 .regshift = 0,
+			 .uartclk = 115200 * 16,
+		 },
+		 {}
+	 };
+	 static struct platform_device s3c_device_8250 = {
+		 .name = "serial8250",
+		 .id = 0,
+		 .dev = {
+			 .platform_data = &s3c_device_8250_data,
+		 },
+	 };
+	 #endif
+     （3）加入内核设备列表中
+        把平台设备s3c_device_8250加入smdk_devs数组后，系统启动时会把这个数组中的设备注册进内核中。增加代码如下：
+	   static struct platform_device __initdata *smdk_devs[] = {
+		   &s3c_device_nand,
+		   ...,
+           #ifdef CONFIG_SERIAL_EXTEND_S3C24xx
+		   &s3c_device_8250,
+	   #endfi
+	   };
+     （4）增加开发板相关的代码使得串口可用
+      在drivers/serial/8250.c中增加代码
+       (a.增加头文件
+          设置存储控制器的BANK5时需要用到这个头文件：
+	     /* for extend serial chip */
+	     #ifdef CONFIG_SERIAL_EXTEND_S3C24xx
+	     #include <asm/arch-s3c2410/regs-mem.h>
+	     #endif
+       (b. 设置存储控制器的BANK5的位宽
+	  16C2550扩展芯片需要以8位的总线宽度进行访问，在drivers/serial/8250.c的初始化函数前面进行设置：
+	    static int __init serial8250_init(void)
+	    {
+	    	...;
+		#ifdef CONFIG_SERIAL_EXTEND_S3C24xx
+		   *((volatile unsigned int *)S3C2410_BWSCON) = 
+		        ((*((volatile unsigned int*)S3C2410_BWSCON)) & ~(3 << 20)) | S3C2410_BWSCON_DW5_8;
+                #endif
+	    }
+        (c. 注册中断处理程序时，指定触发方式
+	  16C2550扩展芯片的INTA、INTB中断信号为高电平有效，所以需要将INTA、INTB指定为上升沿触发（指定为高电平触发也可以），在drivers/serial/8250.c文件中调用request_irq函数之前增加如下代码：
+	     static int serial_link_irq_chain(struct uart_8250_port *up)
+	     {
+	     		...;
+		#ifdef CONFIG_SERIAL_EXTEND_S3C24xx
+			irq_flags |= IRQF_TRIGGER_RISING; 
+		#endif
+			ret = request_irq(up->port.irq, serial8250_interrupt,
+				irq_flags, "serial", i);
+			...;
+	     }
+	（5）增加内核配置项CONFIG_SERIAL_EXTEND_S3C24xx
+	  在内核文件drivers/serial/Kconfig中增加如下几行：
+	      #for extend UART
+	      config SERIAL_EXTEND_S3C24xx
+	      		bool "Extend UART for S3C24xx DEMO Board"
+			depends on SERIAL_8250 = y
+			--- help ---
+			  Say Y here to use extend UART

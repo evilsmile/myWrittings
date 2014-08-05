@@ -1,0 +1,89 @@
+一、Linux内核对异常的设置
+   内核在start_kernel函数（init/main.c）中调用trap_init、init_IRQ两个函数来设置异常的处理函数。
+   1. trap_init函数分析
+   在arch/arm/kernel/traps.c中，trap_init函数直接return了。实际完成设置的是early_trap_init()。
+        void __init early_trap_init(void)
+	{
+		... ...
+		memcpy((void*)vectors, __vectors_start, __vectors_end - __vectors_start);
+		memcpy((void*)vectors + 0x200, __stubs_start, __stubs_end - __stubs_start);
+		... ...
+	}
+    ARM构架CPU的异常向量基址可以是0x0000000，也可以是0xffff0000，Linux内核使用后者。也就是函数中vectors的值。地址__vectors_start~__vectors_end之间的代码就是异常向量，在arch/arm/kernel/entry-armv.S中定义，被复制到0xffff0000.异常向量的代码很简单，只是一些跳转指令。发生异常时，CPU会自动执行这些指令，跳转去执行更复杂的代码，而这些复杂的代码在地址__stubs_start~__stubs_end之间，也在arch/arm/kernel/entry-armv.S中定义，它们被复制到地址0xffff0000+0x200处。
+    early_trap_init函数搭建了各类异常的处理框架。当发生异常时，各种C处理函数会被调用。这些C函数还要进一步细分异常发生的情况，分别调用更具体的处理函数。
+
+2. init_IRQ函数分析
+   中断也是一种异常，之所以把它单独提出来，是因为中断的处理与具体开发板密切相关，除一些必须、共用的中断（比如系统时钟中断、片内外设UART中断）外，必须由驱动开发者提供处理函数。内核提炼出中断处理的共性，搭建了一个非常容易扩充的中断处理体系。
+   init_IRQ函数(arch/arm/kernel/irq.c)被用来初始化中断的处理框架，设置各种中断的默认处理函数。当发生中断时，中断总入口函数asm_do_IRQ就可以调用这些函数作进一步处理。
+   
+三、Linux中断处理体系结构
+   通过irq_desc结构数组就可以了解中断处理体系结构，include/linux/irq.h：
+         struct irq_desc{
+		 irq_flow_handler_t handle_irq;  /* 当前中断的处理函数入口 */
+		 struct irq_chip *chip;    /* 低层的硬件访问 */
+		 ... ...
+		 struct irqaction *action;  /* 用户提供的中断处理函数链表 */
+		 unsigned int status;  /* IRQ状态 */
+	    	 ... ...
+		 const char *name;   /* 中断名称 */	 
+	 }__cacheline_internodealigned_in_smp;
+   发生中断时，总入口函数asm_do_IRQ将根据中断号调用相应irq_desc数组项中的handle_irq。handle_irq使用chip结构中的函数来清除、屏蔽或者重新使能中断，还一一调用用户在action链表中注册的中断处理函数。
+   irq_chip结构类型的成员大多用于操作底层硬件：
+          struct irq_chip{
+		  const char *name;
+		  unsigned int (*startup)(unsigned int irq); /* 启动中断，如果不设置，缺省为“enable” */
+		  void (*shutdown)(unsigned int irq); /* 关闭中断 */
+		  void (*enable)(unsigned int irq); /* 使能中断 */
+		  void (*disable)(unsigned int irq); /* 禁止中断 */
+		  void (*ack)(unsigned int irq); /* 响应中断 */
+		  void (*mask)(unsigned int irq); /* 屏蔽中断 */
+		  void (*mask_ack)(unsigned int irq); /* 屏蔽和响应中断 */
+		  void (*unmask)(unsigned int irq); /* 开启中断源 */
+		  ... ...
+	  }
+   另外，irqaction结构类型代表用户注册的每个中断处理函数，一个中断（如果共享）可以有多个处理函数，它们的irqaction结构链接成一个链表，以action，定义如下：
+          struct irqaction{
+		  irq_handler_t handler;    /* 用户注册的中断处理函数 */
+		  unsigned long flags;    /* 中断标志，如是否共享、触发方式 */
+		  cpumask_t mask;  /* 用于SMP */
+		  const char *name; /* 用户注册的中断名字，可以/proc/interrupts中看到 */
+		  void *dev_id;  /* 用户传给上面的handler的参数，还可以用来区分共享中断 */
+		  struct irqaction *next;
+		  int irq; /* 中断号 */
+		  struct proc_dir_entry *dir;
+	  };
+    irq_desc数组、irq_chip、irqaction这3种数据结构构成了中断处理体系的框架。
+
+    中断的处理流程如下：
+    1. 发生中断时，CPU执行异常向量vector_irq的代码
+    2. 在vector_irq里面，最终会调用中断处理的总入口函数asm_do_IRQ。
+    3. asm_do_IRQ根据中断号调用irq_desc数组项中的handle_irq。
+    4. handle_irq会使用chip成员中的函数来设置硬件，如清中断等
+    5. handle_irq逐个调用用户在action链表中注册的处理函数。
+
+
+    init_IRQ代码解析(arch/arm/kernel/irq.c)：
+		void __init init_IRQ(void)
+		{
+			int irq;
+			for(irq = 0; irq < NR_IRQS; irq++)
+				irq_desc[irq].status | = IRQ_NOREQUEST | IRQ_NOPROBE;
+			...
+			init_arch_irq();
+		}
+    对于S3C2440开发板init_arch_irq函数就是s3c24xx_init_irq，移植Linux内核时讲述的machine_desc结构中的init_irq成员就指向这个函数。
+    s3c24xx_init_irq函数在arch/arm/plat-s3c24xx/irq.c中定义，它为所有的中断设置了芯片相关数据结构(irq_desc[irq].chip)，设置了处理函数入口(irq_desc[irq].handle_irq])。以外部中断EINT4~EINT23为例，代码如下：
+        	for(irqno  = IRQ_EINT4; irqno <= IRQ_EINT23; irqno++){
+			set_irq_chip(irqno, &s3c_irqext_chip);
+			set_irq_handler(irqno, handle_edge_irq);
+			set_irq_flags(irqno, IRQF_VALID);
+		}
+
+   =====================================================
+    用户注册中断处理函数：
+       request_irq()(kernel/irq/manage.c).
+       该函数根据中断号找到irq_desc数组项，然后在它的action链表中添加一个表项。
+    用户卸载中断处理函数：
+       free()(kernel/irq/manage.c).
+       中断是一种很稀缺的资源，当不再使用一个设备时，应该释放它占据的中断。该函数根据中断号和dev_id从action链表中找到表项，将它移除。如果它是惟一的表项，还要调用IRQ_DESC[IRQ].CHIP->SHUTDOWN或IRQ_DESC[IRQ].CHIP->DISABLE来关闭中断。
+   =====================================================

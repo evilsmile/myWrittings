@@ -1,0 +1,133 @@
+1、xor相当于半加，不半进位的加法，看,0^0 =0, 1^1=0, 1^0/0^1=1
+
+2、__attribute__((weak))可以将某个变量或函数声明为弱属性，这样如果在别的文件里有同名的强属性的变量或函数就可以覆盖它们。而如果没有的同名的就用weak属性的这些即可，很好用的可满足不同需求。如在程序里声明int pthread_create(....)(原型形式具体自行查看)，然后去判断有没有pthread_create这个函数，如果在编译的时候加上-pthread则该程序是多线程版本，如果没加则是单线程版本。很棒的东西！还有就是__attribute__((weakref))
+
+3、设置屏幕亮度并保存：修改/etc/default/grub里的GRUB_CMDLINE_LINUX为acpi-backlight=vendor,再执行sudo update-grub，即可更新/boot/grub/grub.cfg。但这样还不行，看这条命令  echo 5 > /sys/class/backlight/acpi_video0/brightness 。这个文件保存了亮度值。将这个改动回到/etc/rc.local里。
+
+4、查看二进制文件xxd
+
+5. 再次证明vim是神器之物. 通过vimgdb这个插件,将gdb的功能加到vim中,初次体验绝对棒! 过程是这样的,下载了vim72的代码和vimgdb的补丁包,将补丁打好再编译好就行了.在使用过程中有很多东西要学. 启用gdb相关的键盘映射的命令是:run macros/gdb_mappings.vim,所以我也可以在这里面修改相关映射. 另外,映射成功后有key mapping类似的提示,按空格打开gdb的命令窗口,可以通过这个窗口输入命令如continue, next, step等,也可以直接用键盘映射. 也可以用:bel 20vsplit gdb-variables来打开一个变量观测窗口,用v模式选中变量,再按<C-P>可以直接复制过去. 
+
+6. Quickfix模式. makeprg是:make执行的命令,可以用set makeprg=gcc\ -Wall\ ...这样的命令来设置,然后直接运行:make. 如果有错,可以用:cw打开错误窗口,:cn/cp到下/上一个错
+
+7. fc可以修改历史命令并执行
+
+8. .ko和.o的区别:.o是object,.ko是kernel object,它比.o多了一些内核相关的section,如.modinfo(这是由内核工具modpost生成的,包括了MODULE_AUTHOR,MODULE_LICENSE,MODULE_DESCRIPTION及模块依赖关系等等,modpost在内核代码树的script/mod/目录下).
+
+9. javac com/lj/A.java; javac com/lj/B.java; java com/lj/A
+
+10. tcpdump -i wlan0 -w /tmp/1.pcap,再用wireshark打开查看即可. 虽然直接运行tcpdump看到的输出没有数据,只有头信息,但是用wireshark打开是有的.
+
+11. 在发送HTTP请求的时候一开始一直没响应,原因是请求信息最后一定要加一行单独的"\r\n"
+
+12. 关于android应用的图标问题.　可以在相关sdk目录下的platforms对应的平台下的template目录下找到三个png的图标文件,替换即可.另外如果安装了一次后,更换了图标再安装的话就无法更换图标了,除非更换com.lj的包名.　估计有种缓存图标的机制.
+
+13. gdb中的print.  print 'file.c::variable'和print main::variable,分别可以查看函数和文件中对应的变量.　另外如p=malloc(10),这样分配一个int数组的时候,可以用print *p@2,查看前两个元素.
+    print也有输出格式.　p/d variable,输出整数格式的变量.另外还有/c(字符),/a(十六进制),/u(无符号整数),/t(二进制),/o(八进制),/f(浮点)
+    display variable,每次在断点处停下时输出variable的值,display/i $pc,输出寄存器pc的值.
+    set print address off/on:　打开/关闭地址输出
+    set print array on/off:　打印数组时是否一行显示一个,还是整个数组一行显示.
+    set print elements 数字n:　打印数组中的前n个元素
+    set print pretty on/off: 打印struct时是否更美观地打印
+    show print:查看print相关属性的设置及介绍!!!!
+
+    gdb中的环境变量使用.set $i=0; print array[$i++].就可以每次只敲回车而依次打印array的一个个成员.
+    print $eip($esp, $pc, $eax...)打印寄存器的值
+
+14. gdb中的条件断点.  如break merge if low==0 && high==15. 命令condition可以修改断点条件.　如condition 2 low==0 && high==1(2为断点编号).而condition 2可以删除断点2的条件.
+　　ignore　断点编号　次数:　忽略指定断点几次.
+
+15. 
+    <1. 关于在总的Makefile中调用子目录中的makefile来生成对象的问题.　可以借助shell脚本的能力.如:
+　　总的Makefile:
+		SUBDIR = client  server
+		all:
+			@for subdir in $(SUBDIR) \
+				do \
+				(cd $$subdir && make) \
+				done
+    这里有几个我碰到的问题.　首先是subdir这个脚本的变量需要用$$subdir来引用且不需要括号.　另外就是(cd $$subdir&&make)里的括号要有.
+
+    <2. Makefile中的静态模式规则:
+    	OBJS=foo.o boo.o
+	$(OBJS):%.o:%.c                 #targets..:target-pattern..:prerequire-pattern
+		$(CC) -o $@ $< 
+	在这里%.o代表模式,%.c代表依赖的文件,所以这里$(OBJS)是符合%.o这种模式的变量,它依赖于%.c的源文件.
+	如果$(OBJS)混入了其它模式的文件,则可用$(filter %.o,$(OBJS))来过虑.
+	而$*可表示%替代的部分,称为茎.如:
+	bigout littleout:%out:text.g
+		generater text.g -$* >$@
+
+    <3. Makefile中的函数
+        定义方式为:  define func1 
+	             ......
+		     endef
+	对应的参数分别为$1,$2..进行引用. 
+	调用方式为: $(call func1,arg1,arg2)
+
+15. 调试linux神器也:gdb + qemu.
+    用命令qemu-system-i386 -S -kernel $(LINUX_DIR)/arch/x86/boot/bzImage -m 512启动内核.　然后要注意ctrl+alt+1和ctrl+alt+2对应的分别是屏幕输出和qemu控制台.　　运行起来以后是黑屏,得先ctrl+alt+2切换到控制台,执行gdbserver tcp::1234,等待gdb连接.
+    另一方面,启动gdb $(LINUX_DIR)/vmlinux,读入符号后执行命令target remote localhost:1234.　gdb>b start_kernel; gdb>continue....开始调试!
+
+16. 关于自动生成文件间的依赖关系.　主要依靠的是gcc -MM file.c这种命令.　那么怎么运用到Makefile中呢.　
+　　首先我们假设把依赖关系写到file.d文件里,　用这样一条命令:
+    %.d:%.c
+　　	@set -e; rm -rf $@; \
+		$(CC) -MM　$<　>$@.$$$$　;\ 将结果先写到临时文件里用于后一步的处理
+		sed 's,\($*\)\.o[:]*, \1 $@: > $@.$$$$ ; \  在file.o:这样的依赖里加入file.o file.d:,这样.d文件也会自动更新
+		rm -rf $@.$$$$
+    然后可以用include $(SRC:%.c=%.d)把c源文件对应的d文件包含进来.
+    要注意的是这种写法下一定要生成.o文件. all:$(EXES)    $(EXES):$(OBJS)  否则make时会出现问题.
+
+17. 自动生成Makefile.... 过程总结:autoscan,命名为configure.in进行些修改; aclocal; autohead;autoconf; 写Makefile.am, automake; ./configure; make
+
+18. 网上看到一段播放h264的代码,用的是ffmpeg的libavcodec.so. 在这里有几点要总结的:
+    (1. 它把H264的所有相关函数和变量封装到一个H264Dec类里面,而且把库里面的avcodec_init等函数的值通过dlsym导入到类里面的成员函数.这么做的话,首先我想到它实现了一个播放功能的封装性,面向对象的思想. 其次因为libavcodec.so是动态加载的,如果修改了它只需要编译它就可以了,不用编译整个项目, 是比较方便的.
+   (2. 另一点就是dlopen,dlsym,dlerror,dlclose相关函数的总结.它们都在dlfcnt.h,libdl.so库里.编译时加上-ldl. 我自己在玩的时候碰到的一个问题是加载libavcodec.so的时候因为依赖于libavutil.so的一些函数导致返回句柄为空.那么怎么解决的? 只能先加载libavutil,再加载libavcodec.
+
+19. 用gdb调试h264_play时运行到pdec->H264Decoder(...)出现
+    	[Thread debugging using libthread_db enabled]
+	Using host libthread_db library "/lib/i386-linux-gnu/libthread_db.so.1".
+	Cannot find new threads: generic error,调试无法继续.
+	解决办法是export LD_PRELOAD=/lib/i386-linux-gnu/libpthread.so.0
+
+20. ffmepg解码一帧一帧图像:ffmpeg -i my264.264 -r 5 image%3d.png
+
+21. ldconfig -p; 可以打印出ldconfig安排的所有库符号链接. 但是有可能我们要使用的库与它默认的有冲突因为名字一样,总是使用默认的,可以这样来解决以使用我们的: export LD_LIBRARY_PATH=../../libs:$LD_LIBRARY_PATH;   其中../../libs是我们的库目录
+
+22. 调试不带非debug文件的一点有趣. 以/bin/ls为例, gdb打开它,执行info file,可以看到打印中有Entry point: 0x8048350这样的信息.
+    好了,在那设断点: b *0x8048350; r;再执行x/14i $PC看看,发现打印中有__libc_start_main这样的信息.因为在main执行前先要做些初始化,由__libc_start_main完成,它所需的第一个参数就是main的地址.所以可以看到0x8048367: push $0x8048440  0x804836c: call 0x8048330 <__libc_start_main@plt>中,0x8048440就是main的地址了.
+
+23. qemu-system-i386调试kernel之命令:
+    qemu-system-i386  -kernel ~/documents/linux-3.2.5/arch/x86/boot/bzImage -initrd /boot/initrd.img-3.2.5lj  -append "root=/dev/sda" -drive file=~/downloads/linux-img/minibootable.img -m 512 -display sdl -monitor stdio
+
+24. 安装wine gecko.
+    将下载好的wine_gecko-1.8-x86.msi放到~/.wine/driver_c/,运行regedit,修改HKEY_CURRENT_USER->Software->wine->MSHTML的GeckoUrl为C:\wine_gecko-1.8-x86.msi. 运行wine iexplore,点击"安装",即可.
+
+25. vboxmanager
+    VirtualBox的命令行管理工具,用起来感觉不错. 当要复制一个虚拟机时,可这么来做:vboxmanage clonevm xp --name xpp --register.如果这时候用vboxmanage startvm xpp发现找不到xpp时,运行vboxmanage registervm ~/VirtualBox/xpp/xpp.vbox来注册.
+    其它功能也很强大.
+
+26. dc一个强大的例子:
+    实现阶乘的计算公式:[d1-d1<F*]dsFxp.就这么简单.使用的时候先压入要计算的n值,再执行这个公式就能得出结果.
+    精髓分析:dsFx中的d将d1-d1<F*这个宏压入栈,并在sF中在F上保留了一份.通过x开始执行.
+    将公式分解,d1-,d1<F,*.d1-是将n值递减,然后通过d1<判断它是不是大于1(d是复制栈顶),是的话,根据man手册,接下来会执行F中的内容,也就是再一次执行d1-d1<F*,这样就出现了递归的模型.直到d1==1时结束,再执行*,由2*3*4往回计算.最后p输出.
+    看一下栈的数据,[4]->[4 3],3大于1,继续[4 3 2]...[4 3 2 1 *]->[4 3 2*]->[4 6*]->[24]. 
+
+27. NB books:
+	Advanced Programming in the UNIX Environment
+	The AWK Programming Language
+	The C Programming Language
+        Compilers: Principles, Techniques, and Tools
+        Computer Networks, 3rd Ed.
+        Computer Networks And Internets, 3rd Ed.
+        The Design and Implementation of the 4.4BSD Operating System
+        Effective TCP/IP Programming
+        The Elements of Programming Style, 2nd Ed.
+        Internetworking With TCP/IP Volume 123
+        More Programming Pearls
+        The Practice of Programming
+        Software Tools
+        Unix Network Programming
+        The UNIX Programming Environment
+        Programming in C++

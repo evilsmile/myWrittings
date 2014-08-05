@@ -1,0 +1,21 @@
+    中断控制器发展至今，经历了PIC(Programmable Interrupt Controller，可编程中断控制器)和APIC(Advanced Programmable Interrupt Controller，高级可编程中断控制器)两个阶段。
+    PIC具有IR0~IR7共8个中断管脚可与外部设备相连，其中IR0优先级最高，IR7最低。PIC有如下三个重要的寄存器：
+      ＋ IRR（Interrupt Request Register,中断请求寄存器):共8位，对应IR0～IR7这8个中断管脚。当某一位为1时，则代表该对应管脚收到中断，但未提交给CPU。
+      ＋ ISR（In Service Register,服务中寄存器):共8位。当某一位为1时则代表对应管脚的中断已经提交给CPU，但是CPU还未处理完 。
+      ＋ IMR(Interrupt Mask Register,中断屏蔽寄存器）：共8位。当某一位置1时，则代表对应管脚的中断被屏蔽。
+
+   此外，PIC还有一个EOI位，当CPU处理完一个中断时，通过写EOI位告知PIC中断处理完成。PIC向ＣＰＵ提交中断的流程如下：
+   　　1) 一个或多个ＩＲ管脚上产生电平信号，若对应的中断没有被屏蔽，ＩＲＲ中相应位被置１。
+       2) PIC通过INT管脚通知CPU中断发生。
+       3) CPU通过INTA管脚应答PIC，表示中断请求收到。
+       4) PIC收到INTA应答之后，将IRR中具有最高优先级的管脚位清零，并设置ISR中的相应位。
+       5) CPU通过INTA管理第二次发出脉冲，PIC收到脉冲后，将计算最高优先级中断对应的中断向量，并将它提交到数据线上。
+       6) 等待CPU与EOI。收到EOI后，ISR 中最高优先级的管脚位清零。
+
+    PIC只能在UP（单处理器）平台上工作，而无法用于MP（多处理器）到哪。因此APIC应运而生。APIC由两部分构成：位于CPU中的本地高级可编程中断控制器（Local Advanced Programmable Interrupt Controller, LAPIC)和位于主板南桥中I/O高级可编程中断控制器(I/O Advanced Programmable Interrupt Controller, IOAPIC)。
+    IOAPIC通常有24个不具有优先极的管脚，用于连接外部设备。当收到某个管脚的中断信号后，IOAPIC根据操作系统设定的PRT（Programmable Redirection Table）查找到管脚对应的RTE(Redirection Table Entry,PRT的表项)。通过RTE格式化出一条包含该中断所有信息的中断消息，再由系统总线交由特定CPU的LAPIC，LAPIC 收到该消息后，择机将中断交给CPU处理。
+    LAPIC也有IRR 、ISR、和EOI寄存器，其中IRR和ISR为256位，EOI为32位，它们的功能与PIC中的相应设备基本相同。
+    在MP平台上，多个CPU要协同工作，于是APIC还可以提供处理器间中断（Inter-processor Interrupt, IPI），方便CPU之间相互通信。CPU通过LAPIC中的中断命令寄存器（Interrupt Command Register, ICR）向指定的一个或多个CPU发送中断。操作系统通过IPI来完成进程转换、中断平衡和TLB刷新等工作。
+
+
+    中断门和陷阱门唯一的区别就是程序通过中断门中转后，EFLAGS寄存器的IF位自动清零，中断关闭，而陷阱门没有这样的效果。

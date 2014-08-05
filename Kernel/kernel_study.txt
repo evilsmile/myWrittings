@@ -1,0 +1,8 @@
+1、addr2line是个好工具，像kill()这样的系统调用通过ctags的文件是找不到的，因为它的定义是SYSCALL_DEFINE2(kill ....)，可以通过System.map找到sys_kill的地址，再执行addr2line -e vmlinux 0x8...(当然，vmliunx得要重新编译为带调试信息的，可以在make menuconfig的kernel hacking里打开)，就列出了这个函数的地址
+2、find_pid_ns(int nr, struct pid_namespace *ns)函数解析:
+         struct pid |                           |
+	 	    | upid|       int nr        | |
+		<---|-----|-hlist_node chain --|-|--->
+	在内核中有个全局变量struct hlist_head *pid_hash。这个数组大小是1<<pidhash_shift。它通过chain成员将所有upid串起来。那么我们在寻找nr对应的pid时首先通过pid_hashfn(nr,ns)计算对应的哈希值得到hlist_head，再通过这条链依次访问hlist_node chain。利用类似container_of这种功能的宏将chain转换为upid，比较其nr，如果对上了，再由conainer_of返回pid.
+3、关于变长数组即data[0]这样的定义，本质就是在常规结构体成员后接上一段变长的存储空间。
+4、对mm_users、mm_count的理解，mm_count在分配mm_struct的时候置1，可以看成是使用这个变量的进程数量；而mm_users理像是共享这片mm_struct的线程数量

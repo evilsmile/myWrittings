@@ -1,0 +1,261 @@
+一、linux源代码中的Makefile
+    Linux内核的编译过程从顶层Makefile开始，然后递归地进入各级子目录调用它们的Makefile，分为3个步骤：
+    1. 顶层Makefile决定内核根目录下哪些子目录将被编进内核
+    2. arch/$(ARCH)/Makefile决定arch/$(ARCH)/目录下哪些文件、目录将被编进内核
+    3. 各级子目录下的Makefile决定所在目录下哪些文件将被编进内核，哪些文件将被编成模块（即驱动程序），进入哪些子目录继续调用它们的Makefile。
+
+    顶层目录Makefile中包括core-y、net-y、drivers-y、libs-y、init-y几部分，并且包含了arch/$(ARCH)/Makefile，在该文件中进一步添加相应的文件，并增加了head-y。
+    编译内核时，将依次进入core-y等所列出的目录中执行它们的Makefile，每个子目录都会生成一个built-in.o(libs-y所列目录下，有可能生成lib.a文件)。最后head-y所表示的文件将和这些built-in.o、lib.a一起被连接成内核映像文件vmlinux。
+
+    在配置内核时生成了配置文件.config。.config去掉注释并增加一些变量后得到include/config/auto.conf文件，该文件包含到顶层的Makefile中。
+
+    obj-y,obj-m,lib-y等：
+    1. obj-y用来定义哪些文件被编译进（built-in）内核
+      obj-y中定义的.o文件由当前目录下的.c或.S文件编译生成，它们连同下级子目录中的built-in.o文件一起组合生成（使用“$(LD) -r”命令）当前目录下的built-in.o文件。而这个built-in.o文件将被它的上一层Makefile使用。
+      obj-y中各个.o文件的顺序是有意义的，因为内核中用module_init()或__initcall定义的函数将按照它们的连接顺序被调用。
+
+    2. obj-m用来定义哪些文件被编译成可加载模块
+      obj-m中定义的.o文件不会被编译进built-in.o中，而是被编成可加载模块。
+
+    3. lib-y用来定义哪些文件被编译成库文件
+       lib-y定义的.o文件被打包成当前目录下的一个库文件lib.a。
+       要把这个lib.a编进内核中，需要在顶层Makefile中libs-y变量中列出当前目录。要编译成库文件的内核代码一般都在这两个目录下：lib/、arch/$(ARCH)/lib/。
+
+    4. obj-y、obj-m还可以用来指定要进入的下一层子目录。
+       如obj-$(CONFIG_JFFS2_FS) += jffs2/
+
+二、编译文件
+    编译过程涉及到编译选项、连接选项等。这些选项分为3类：全局的，适用于整个内核代码树；局部的，仅适用于某个Makefile中的所有文件；个体的，仅适用于某个文件。
+    全局的选项定义在顶层Makefile和arch/$(ARCH)/Makefile中，这些选项的名称为：CFLAGS、AFLAGS、LDFLAGS、ARFLAGS，即编译C文件的选项、编译汇编文件的选项、连接文件的选项和制作库文件的选项。
+    局部的选项定义在各个子目录中，名称为EXTRA_CFLAGS、EXTRA_AFLAGS、EXTRA_LDFLAGS、EXTRA_ARFLAGS，其用途与前述选项相同，只是适用范围较小，只针对当前Makefile中的所有文件。
+    而对于个体文件的编译选项，可以使用CFLAGS_$@、AFLAGS_$@，分别用于编译C和汇编文件。$@表示某个目标的文件名，如：
+       CFLAGS_aha152.o = -DAHA152_STAT，针对aha152.c编译时额外的选项。
+    这3类选项是一起使用的，在scripts/Makefile.lib中可以看到：
+        _c_flags = $(CFLAGS) $(EXTRA_CFLAGS) $(CFLAGS_$(basetarget).o)
+    
+    连接文件：
+    在顶层目录Makefile中（包括了arch目录下的Makefile），除head-y外，其余的init-y、drivers-y等都是目录名，这些目录名经过类似这样的处理：
+        init-y := $(patsubst %/,%/built-in.o, $(init-y))，
+ 于是在目录名的后面加上了built-in.o或lib.a。
+    在顶层Makefile中，又包含如下内容：
+        vmlinux-init := $(head-y) $(init-y)
+	vmlinux-main := $(core-y) $(libs-y) $(drivers-y) $(net-y)
+	vmlinux-all := $(vmlinux-init) $(vmlinux-main)
+	vmlinux-lds := arch/$(ARCH)/kernel/vmlinux.lds
+    由此可知，这些目标文件的顺序为：head-y、init-y、core-y、libs-y、drivers-y、net-y，即arch/arm/kernel/head.o、arch/arm/kernel/init_task.o、init/build-in.o、usr/built-in.o等。
+    vmlinux-lds是由arch/arm/kernel/vmlinux.lds.S文件生成的，规则在script/Makefile.build中，如下所示：
+          $(obj)/%.lds:$(src)/%.lds.S FORCE
+	  	$(call if_changed_dep, cpp_lds_S)
+
+三、 Kconfig
+   内核源码每个子目录中，都有一个Makefile和Kconfig文件。Makefile作用已知，Kconfig用于配置内核，也就是各种配置界面的源文件。内核的配置工作读取各个Kconfig文件，生成配置界面供开发人员配置内核，最后生成配置文件.config。
+
+四、 内核启动
+   内核映像中，定义了若干个proc_info_list结构，表示内核能支持的CPU。对于ARM架构的CPU，这些结构体的源码在arch/arm/mm目录下，如proc-arm920.S中的如下代码，表示arm920 CPU的proc_info_list结构：
+            .section ".proc.info.init", #alloc, #execinstr
+
+	    .type  __arm920_proc_info, #object
+	    __arm920_proc_info:
+	         .long 0x41009200
+		 .long 0xff00fff0
+		 ... ...
+    不同的proc_info_list结构被用来支持不同的CPU，它们都定义在“.proc.info.init"段中。在连接内核时，这些结构被组织在一起，开始地址为__proc_info_begin，结束地址为__proc_info_end。这可以从连接脚本文件arch/arm/kernel/vmlinux.lds中看出来。
+            __proc_info_begin = .;  /* proc_info_list结构的开始地址 */
+	     *(.proc.info.init)
+	    __proc_info_end = .;   /* proc_info_list结构的结束地址  */
+
+    在head.S中，__lookup_processor_type函数就是根据前面读出的CPU ID,对比proc_info_list中的cpu_val和cpu_mask值，从这些proc_info_list结构中找到匹配的。
+    当然，内核需要包含proc-arm920.S这个文件才能表明其支持的CPU，这在arch/arm/mm/Makefile中可以看到下面这行：
+           obj-$(CONFIG_CPU_ARM920T) += proc-arm920.o
+    它表示需要配置CONFIG_CPU_ARM920T以添加支持（System Type->Support ARM920T processor）。
+
+    除了CPU外，在head.S中还需要检查是否支持开发板，调用__lookup_machine_type函数。
+    内核中对于每种支持的开发板都会使用宏MACHINE_START、MACHINE_END来定义一个machine_desc结构，它定义了开发板相关的一些函数，比如机器类型ID、起始IO物理地址、Bootloader传入的参数地址、中断初始化函数、IO映射函数等。如对于SDMK2440开发板，在arch/arm/mach-s3c2440/mach-smdk2440.c中定义如下：
+          MACHINE_START(S3C2440, "SMDK2440")
+                    .phys_io = S3C2410_PA_UART,
+	            .io_pg_offset = (((u32)S3C24XX_VA_UART) >> 18) & 0xfffc,
+	            .boot_params = S3C2410_SDRAM_PA + 0x100,
+	            .init_irq = s3c24xx_init_irq,
+	            .map_io = smdk2440_map_io,
+	             ... ...
+	  MACHINE_END
+    将宏展开，即：
+           static const struct machine_desc __mach_desc_S3C2440
+                __used
+                __attribute__((__section__(".arch.info.init"))) = {
+			.nr = MACH_TYPE_S3C2440,
+			.name = "SMDK2440",
+	   		... ...
+		};		
+     其中MACH_TYPE_S3C2440在arch/arm/tools/mach-types中定义，最后会被转换成一个头文件include/asm-arm/mach-types.h供其他文件包含。所有的machine_desc结构都处于".arch.info.init"段中，在连接内核时，它们被组织在一起，开始地址为__arch_info_begin，结束地址为__arch_info_end。这可以从连接脚本文件arch/arm/kernel/vmlinux.lds中看出来：
+            __arch_info_begin = .;  /* machine_desc结构的开始地址 */
+	     *(.arch.info.init)
+	    __arch_info_end = .;   /* machine_desc结构的结束地址 */
+     不同的machine_desc结构用于不同的开发板，U-Boot调用内核时，会在r1寄存器中给出开发板的标记(机器类型ID)。__lookup_machine_type函数将这个值与machine_desc结构中的nr成员比较，如果两者相等则表示找到匹配的machine_desc结构，返回其地址（存在r5中）；如果没找到则返回0.
+     对于S3C2410、S3C2440开发板，U-Boot传入的机器类型ID为MACH_TYPE_SMDK2410、MACH_TYPE_S3C2440，分别对应的machine_desc结构在arch/arm/mach-s3c2410/mach-smdk2410.c和arch/arm/mach-s3c2440/mach-smdk2440.c中定义，所以这两个文件也要编译进内核中(System Type -> S3C2440 Machine -> SMDK2440)。
+
+五、start_kernel函数部分代码分析
+    进入start_kernel函数(init/main.c)之后，在调用setup_arch函数之前已经调用"printk(linux_banner)"了，但是这个时候printk函数只是将打印信息放在缓冲区中，并没有打印到控制台上，因为这个时候控制台还没有初始化。只有在console_init函数注册、初始化控制台后printk函数打印的内容才真正输出。
+    移植U-Boot时，U-Boot传给内核的参数有两类：预先存在某个地址的tag列表和调用内核时在r1寄存器中指定的机器类型ID。tag列表将在setup_arch函数中进行初步处理，而机器类型ID已经在引导阶段的__lookup_machine_type函数中用到。
+    1. setup_arch函数分析
+                   开始
+		    ｜
+    	    进行处理器相关的一些设置 (setup_processor()->lookup_processor_type())
+		    ｜
+             进行开发板相关的一些设置  (setup_machine()获得machine_desc结构)
+	            ｜
+		 处理tag列表  (parse_tags)
+		    ｜
+	  处理命令行参数进行一些先期设置 (parse_cmdline)
+	            ｜
+	      重新初始化页表   paging_init
+	            ｜
+		... ...
+	文件arch/arm/kernel/setup.c对每种tag都定义了相应的处理函数，比如对于内存tag、命令行tag，使用如下现行代码指定了它们的处理函数为parse_tag_mem32、parse_tag_cmdline：
+	      __tagtable(ATAG_MEM, parse_tag_mem32);
+	      __tagtable(ATAG_CMDLINE, parse_tag_cmdline);
+      parse_tag_mem32函数根据内存tag定义的内存起始地址、长度，在全局结构变量meminfo中增加内存的描述信息。以后内存就可以通过meminfo结构了解开发板的内存信息。
+      而parse_tag_cmdline只是简单地将命令行tag的内容复制到字符串default_command_line中保存下来，后面才进一步处理。
+      在parse_cmdline函数中，扫描命令行参数，对其中的一些参数进行先期的处理。这些参数使用“__early_param”来定义。如arch/arm/kernel/setup.c中的下面一行代码：
+                  __early_param("mem=", early_mem);
+      它表示如果命令行中有"mem=..."的字样，就调用early_mem对它进行处理。"mem=..."用来强制限制Linux系统所能使用的内存问题，即使在内存tag中指明了更多的内存。
+
+      命令行的处理并未到此结束，在setup_arch函数之外还会进行一系列的后续处理。
+      比如对于命令行中的“console=ttySAC0”,它的处理过程就是在start_kernel()中调用parse_args函数->unknown_bootoption函数，最后调用下面代码指定的处理函数console_setup(kernel/prink.c):
+	      __setup("console=", console_setup);
+      命令行参数"console=.."用来指定要使用的控制台的名称、序号、参数。经过console_setup处理后，会在全局结构变量console_cmdline中保存这些信息，在后面console_init函数初始化控制台时会根据这些信息选择要使用的控制台。
+
+   2. paging_init函数分析
+      在setup_arch函数中被调用：paging_init(&meminfo, mdesc);
+      meminfo中存放内存的信息，前面解释内存tag时确定构建了这个全局结构；mdesc就是前面lookup_machine_type函数返回的machine_desc结构。
+      paging_init函数在arch/arm/mm/mmu.c中定义，根据移植的目的（让内核可以在S3C2440上运行），只需要关注如下流程：
+	  paging_init -> devicemaps_init -> mdesc->map_io()
+      对于S3C2440开发板，就是调用smdk2440_map_io函数，它也是在arch/arm/mach-s3c2440/mach-smdk2440.c中定义，如下所示：
+	   static void __init smdk2440_map_io(void)
+	   {
+		   s3c24xx_init_io(...);
+		   s3c24xx_init_clocks(16934400);
+		   s3c24xx_init_uarts(...);
+	   }
+      注意s3c24xx_init_clocks函数中的数值，表示开发板的晶振频率。对于S3C2440开发板应该改为12000000(12MHz)。
+
+   3. console_init函数分析
+      在内核中注册控制台，把s3c24xx_serial_console结构链入一个全局链表console_drivers中(kernel/printk.c)。并且使用其中的名字(name)和序号(index)与前面"console=..."指定的控制台相比较。如果相符，则以后的printk信息就从这个控制台输出。
+      对于"console=ttySAC0",s3c24xx_serial_console结构中名字为"ttySAC“，序号为-1（表示可以取任意值），所以两者匹配，printk信息将从串口0输出。
+
+   4. 总结内核启动第二阶段的函数调用过程（以S3C2440开发板为例）：
+       start_kernel ->
+       		setup_arch ->
+			setup_processor
+			setup_machine
+			...
+			parse_tags
+			...
+			parse_cmdline
+			paging_init ->
+				devicemaps_init ->
+					mdesc->map_io() ->
+						s3c24xx_init_io
+						s3c24xx_init_clocks
+						s3c24xx_init_uarts
+			...
+			console_init ->
+				s3c24xx_serial_initconsole ->
+					register_console(&s3c24xx_serial_console)
+
+
+六、修改内核
+    1. 修改MTD分区
+       MTD（Memory Technology Device），即内存技术设备，是Linux中对ROM、NOR Flash、NAND Flash等存储设备抽象出来的一个设备层，它向上提供统一的访问接口：读、写、擦除等；屏蔽了底层的硬件的操作、各类存储设备的差别。利益于MTD设备的途径，重新划分NAND Flash的分区很简单。本节分两部分，先介绍内核对NAND Flash的识别过程，再给出具体的代码修改方法。
+       (1. 驱动对设备的识别过程
+	驱动程序本身没有设备的信息，但是内核中已经（或以后）根据其他方式确定了很多设备的信息；加载驱动程序时，将驱动程序与这些设备逐个比较，确定两者是否匹配；如果匹配，则可以通过该驱动程序操作这个设备。
+	在include/linux/platform_device.h中，定义了platform_device结构来描述设备的名称、ID、所占用的资源等，platform_driver结构用来描述各种操作函数如枚举函数、移除设备函数、驱动的名称等等。
+        内核启动后，首先构造一个链表，把描述设备的platform_device结构组织起来，得到一个设备的列表；当加载某个驱动程序的platform_driver结构时，使用一些匹配函数来检查驱动程序能否支持这些设备：比较驱动程序和设备的名称。
+	以S3C2440开发板为例，在arch/arm/mach-s3c2440/mach-smdk2440.c中定义了如下设备：
+	   static struct platform_device *smdk2440_devices[] __initdata = {
+	        &s3c_device_usb,
+	        &s3c_device_lcd,
+	        &s3c_device_wdt,
+	        &s3c_device_i2c,
+	        &s3c_device_iis,
+	   };
+         在arch/arm/plat-s3c24xx/common-smdk.c中定义了如下设备：
+	    static struct platform_device __initdata *smdk_devs[] = {
+	          &s3c_device_nand,
+		  &smdk_led4,
+		  &smdk_led5,
+		  &smdk_led6,
+		  &smdk_led7,
+	    };
+       这些设备在smdk2410_init函数（对应S3C2410）或smdk2440_machine_init函数（对应S3C2440）中，通过platform_add_devices函数注册进内核中。
+
+       NAND Flash设备s3c_device_nand在arch/arm/plat-s3c24xx/devs.c中的定义如下：
+           struct platform_device s3c_device_nand = {
+		   .name = "s3c2410-nand",
+		   .id = -1,
+		   .num_resources = ARRAY_SIZE(s3c_nand_resource),
+		   ...
+	   };
+     对于S3C2440开发板，s3c_device_nand结构的名字会在s3c244x_map_io函数中修改为"s3c2440-nand"，这个函数在arch/arm/plat-s3c24xx/s3c244x.c中的定义如下：
+          void __init s3c24x_map_io(struct map_desc *mach_desc, int size)
+	  {
+		  ... ...
+		  s3c_device_i2c.name = "s3c2440-i2c";
+		  s3c_device_nand.name = "s3c2440-nand";
+		  ... ...
+	  }
+     以上就将NAND Flash设备相关的数据准备好了。然后还要有NAND Flash驱动程序，内核针对S3C2410、S3C2412、s3c2440定义了3个驱动。它们在drivers/mtd/nand/s3c2410.c中的s3c2410_nand_init函数中注册进内核：
+	      static  int __init s3c2410_nand_init(void)
+	      {
+		      platform_driver_register(&s3c2412_nand_driver);
+		      platform_driver_register(&s3c2440_nand_driver);
+		      return platform_driver_register(&s3c2410_nand_driver);
+	      }
+      其中s3c2440_nand_driver结构定义如下：
+               static struct platform_driver s3c2440_nand_driver = {
+		       .probe = s3c2440_nand_probe,
+		       .remove = s3c2410_nand_remove,
+		       ... ...
+		       .driver = {
+		     		.name = "s3c2440-nand",
+		 		.owner = THIS_MODULE,
+		       },
+	       };
+      可以发现，s3c_device_nand结构和s3c2440_nand_driver结构中的name成员相同，为"s3c2440-nand"。platform_driver_register函数就是根据这点确定它们是匹配的，所以调用s3c2440_nand_probe函数来枚举NAND Flash设备s3c_device_nand。
+
+      从s3c2440_nand_probe函数开始，可以一直找到对NAND Flash分区的识别：
+          s3c2440_nand_probe(&s3c_device_nand) -> //进行了替换
+	  	s3c24xx_nand_probe(&s3c_device_nand, TYPE_S3C2440) ->
+		... ...
+		s3c2410_nand_add_partition(info, nmtd, sets)  ->
+			add_mtd_partitions(...)   //实参是smdk_default_nand_part
+
+      这些函数都是在drivers/mtd/nand/s3c2410.c中定义，最后的add_mtd_partitions函数根据smdk_default_nand_part结构来确定分区。这个结构在arch/arm/plat-s3c24xx/common-smdk.c中定义，要改变分区时修改它即可。
+
+
+     2. 修改MTD分区
+       如前所述，要改变分区时，就修改arch/arm/plat-s3c24xx/common-smdk.c文件中的smdk_default_nand_part结构。在此将NAND Flash划分为3个分区，前2M用于存放内核，接下来的8M用于存放JFFS2文件系统，剩下的用来存放YAFFS文件系统。修改如下：
+             static struct mtd_partition smdk_default_nand_part[] = {
+		 [0] = {
+		     .name = "kernel",
+	    	     .size = SZ_2M,
+		     .offset = 0,
+	          },
+		 [1] = {
+		     .name = "jffs2",
+	    	     .size = SZ_8M,
+		     .offset = MTDPART_OFS_ADDPEND,
+	          },
+		 [2] = {
+		     .name = "yaffs",
+	    	     .size = MTDPART_SIZE_FULL,
+		     .offset = MTDPART_OFS_ADDPEND,
+	          },
+	     };
+       其中MTDPART_OFS_ADDPEND表示当前分区紧接着上一个分区，MTDPART_SIZE_FULL表示当前分区的大小为剩余的Flash空间。
+       执行 make uImage重新生成内核。
+
+
+七、YAFFS文件系统
+    YAFFS（yet another flash file system）是一种类似于JFFS/JFFS2、专门为NAND Flash设计的嵌入式文件系统，适用于大容量的存储设备。与JFFS相比，它减少了一些功能， 因此速度更快，占用内存更少。
+    YAFFS充分考虑了NAND Flash的特点，根据NAND Flash以页面为单位存取的特点，将文件组织成固定大小的数据段。利用NAND Flash提供的每个页面16个字节的OOB空间来ECC（Error Corretion Code）和文件系统的组织信息，不仅能够实现错误检测和坏块处理，也能够提高文件系统的加载速度。YAFFS采用了一种多策略混合的垃圾回收算法，结合了贪心策略的高效性和随机选择的平衡性，达到了兼顾损耗平均和系统开销的目的。

@@ -1,0 +1,8 @@
+server side:
+   $ gdbserver localhost:12345 test
+
+client side:
+   $gdb test
+   $ target remote 192.168.1.144:12345
+   $ b main
+   $ continue

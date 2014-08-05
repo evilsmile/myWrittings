@@ -1,0 +1,3 @@
+sys_call_table:系统调用在文件arch/x86/kernel/syscall_table_32.S中
+
+而对应的处理函数类似sys_write，可能由SYSCALL_DEFINE0/1/2/3定义，分布在源码的不同位置。sys_write在fs/read_write.c中

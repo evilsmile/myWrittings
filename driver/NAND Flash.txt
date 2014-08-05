@@ -1,0 +1,200 @@
+一、介绍
+　  NAND Flash与S3C2410/S3C2440的连线比较少：８个IO引脚、5个使能信号(nWE、ALE、CLE、nCE、nRE)、1个状态引脚（RDY/B）、1个写保护引脚(nWP)。地址、数据和命令都是在这些使能信号的配合下，通过8个IO引脚传输。写地址、数据、命令时，nCE、nWE依赖必须为低电平，它们在nWE信号的上升沿被锁存。命令锁存使能信号CLE和地址锁存信号ALE用来区分IO引脚上传输的是命令还是地址。
+   NAND闪存的操作特点是：探险操作的最小单位是块；NAND闪存芯片每一位只能从1变为0，而不能从0变为1，所以在对其进行写入操作之前一定要将相应块擦除；OCB部分的第6字节为坏块标志，即如果不是坏块该值为FF，否则为坏块；除）OCB第6字节外，通常用OCB的前3个字节存放NAND闪存的硬件ECC（校验寄存器）码。 
+
+二、命令字及操作方法
+    操作NAND Flash时，先传输命令，然后传输地址，最后读写数据，期间要检查Flash的状态。对于K9F1208U0M，它的容量为64MB，需要一个26位的地址。发出命令后，后面要紧跟着4个地址序列。比如读Flash时，发出读命令和4个地址序列后，后续的读操作就可以得到这个地址及其后续地址的数据。
+    K9F1208U0M一页大小为512字节，分为两部分：上半部、下半部。
+    列地址用来在半页256字节中寻址。
+    当发出读命令00h时，表示列地址将在上半部寻址；当发出读命令01h时，表示列地址将在下半部寻址。A8被读命令00h设为低电平，被01h设为高电平。
+    K9F1208U0M一页大小为528字节，而列地址A0～A7可以寻址的范围是256字节，所以必须辅以其他手段才能完全寻址这528字节。将一页分为A、B、C三个区：A区为0～255字节，B区为256～511字节，C区为512～527字节。访问某页时，需要选定特定的区，这称为“使地址指针指向特定的区”。这通过3个命令来实现：命令00h让地址指针指向A区、命令01h让地址指针指向B区、命令50h让地址指针指向C区。命令00h和50h会使得访问Flash的地址指针一直从A区或C区开始，除非发出了其他的修改地址指针的命令。命令01h的效果只能维持一次，当前的读、写、擦除、复位或者上电操作完成后，地址指针重新指向A区。写A区或C区的数据时，必须在发出命令80h之前发出命令00h或50h；写B区的数据时，发出命令01h后必须紧接着就发出命令80h。
+
+    下面逐个讲解K9F1208U0M的命令字：
+    (1. Read 1：命令字为00h或01h
+        发出命令00h或01h后，就选定了读操作是从A区还是B区开始。列地址A0～A7可以寻址的范围是256字节，命令00h和01h使得可以在512字节大小的页内任意寻址，这相当于A8被命令00h设为0，而被命令01h设为1.
+	发出命令字后，再发出4个地址序列，然后就可以检测R/nB引脚以确定Flash是否准备好。如果准备好了，就可以发起读操作依次读入数据。
+    (2. Read 2：命令字为50h
+        与Read 1命令类似，不过读取的是C区数据，操作序列为：发出命令字50h、发出4个地址序列、等待R/nB引脚为高，最后读取数据。不同的是，地址序列中A0～A3用于设定C区（大小为16字节）要读取的起始地址，A4～A7被忽略。
+    (3. Read ID：命令字为90h
+        发出命令字90h，发出4个地址序列（都为0），然后就可以连续读入5个数据，分别表示：厂商代码（对于SAMSUNG公司为Ech）、设备代码（对于K9F1208U0M为76h）、保留的字节（对于K9F1208U0M为A5h）、多层操作代码（C0h表示支持多层操作）。
+    (4. Reset：命令字为FFh
+        发出命令字FFh即可复位NAND Flash芯片。如果芯片正处于读、写、擦除状态，复位命令会终止这些命令。
+    (5. Page Program(True)：命令字分为两阶段，80h和10h
+        NAND Flash的写操作一般是以页为单位的，但是可以只写一页中的一部分。发出命令80h后，紧接着是4个地址序列，然后向Flash发送数据（最大可达到528字节），然后发出命令字10h启动写操作，此时Flash内部会自动完成写、检验操作。一旦发出命令字10h后，就可以通过读状态命令70h获当前写操作是否完成、是否成功。
+    (6. Page Program(Dummy)：命令字分为两个阶段，80h和11h
+        NAND Flash K9F1208U0M分为4个128Mbit的存储层（plane），每个存储层包含1024个block和528字节的寄存器。这使得可以同时写多个页（page）或者同时擦除多个块(block)。块的地址经过精心安排，可以在4个连续的块内同时进行写或者擦除操作。命令Page Program(Dummy)正是在这种结构下对命令Page Program(true)的扩展，后者仅能对一页进行写操作，前者可以同时写4页。发出命令字80h、4个地址序列及最多528字节的数据后，发出命令字11h(11h称为"Dummy Page Program Command“，相对地，10h称为"True Page Program Command")；接着对相邻层(plane)上的页进行同样的操作；仅在第4页的最后使用10h替代11h,这样即可启动Flash内部的写操作。此时可以通过命令命令71h获知这些写操作是否完成、是否成功。
+    (7. Copy-Back Program(True)：命令字分为3个阶段，00h、8Ah、10h
+        此命令用于将一页复制到同一层（plane）内的另一页，它省略了读出源数据、将数据重新载入Flash，这使得效率大为提高。此命令有两个限制：源页、目的页必须在同一个层中，并且源地址、目的地址的A14、A15必须相同。
+	首先发出命令Read（00h）、4个源地址序列，此时源页的528字节数据很快就被全部读入内部寄存器中；接着发出命令字8Ah(Page-Copy Data-input Command)，随之发出4个目的地址序列；最后发出命令字10h启动对目的页的写操作。此后可以使用命令70h来查看此操作是否完成和成功。
+    (8. Copy-Back Program(Dummy)：命令字分为3阶段，03h、8Ah、11h
+        与命令Page Program(Dummy)类似，Copy-Back Program(Dummy)可以同时启动对多达4个连续plane内的Copy-Back Program操作。
+	首先发出命令字00h、源页地址，这使得源页的528字节数据被读入所在plane的寄存器；对于随后的其他plane源页，发出命令字03h和相应的源页地址将数据读入该plane的寄存器；按照前述说明读出最多4页的数据到寄存器后，发出命令字8Ah、目的地址、命令字11h，在发出最后一页的地址后，用10h代替11h以启动写操作。
+    (9. Block Erase：命令字分为3阶段，60h、D0h
+        此命令用于擦除NAND Flash块（block，大小为16KB）。发出命令字60h之后，发出block地址，仅需要3个地址序列，并且A9～A13被忽略。 
+    (10. Multi-Plane Block Erase：60h -- 60h D0h
+        此命令用于同时擦除不同plane中的块。发出命令字60h之后，紧接着发出block地址序列，如此最多可以发出4个block地址，最后发出命令字D0h启动擦除操作。
+    (11. 读状态命令有如下两种：
+         + Read Status：命令字为70h
+	 + Read Multi-Plane Status：命令字为71h
+	Flash中有状态寄存器，发出命令字70h或者71h之后，启动读操作即可读入此寄存器。
+	IO引脚    所标识的状态               命令70h对应的定义      命令71h对应的定义
+	IO0       总标记：成功/失败           成功：0，失败：1         成功：0，失败：1
+	IO1       Plane0的标记：成功/失败     忽略                     成功：0，失败：1
+	IO2       Plane1的标记：成功/失败     忽略                     成功：0，失败：1
+	IO3       Plane2的标记：成功/失败     忽略                     成功：0，失败：1
+	IO4       Plane3的标记：成功/失败     忽略                     成功：0，失败：1
+	IO5       保留                        忽略                     忽略
+	IO6       设备状态                    忙：0，就绪：1           成功：0，失败：1
+	IO7       写保护状态                  保护：0，无保护：1       保护：0，无保护：1
+	(IO0是所有Plane的总标记，只要有一个Plane的操作失败，IO0就会被设为失败)
+
+
+三、S3C2410/S3C2440 NAND Flash控制器介绍
+    NAND Flash控制器提供几个寄存器来简化对NAND Flash的操作。比如要发出读命令时，只需要往NFCMD寄存器写入0即可，NAND Flash控制器会自动发出各种控制信号。
+    1. 操作方法概述
+       访问NAND Flash时需要先发出命令，然后发出地址序列，最后读写数据；需要使用各个使能信号来分辨是命令、地址还是数据。S3C2410的NAND Flash控制器提供了NFCONF、NFCMD、NFADDR、NFDATA、NFSTAT和NFECC等6个寄存器来简化这些操作。S3C2440的NAND Flash控制器则提供了NFCONF、NFCONT、NFCMMD、NFADDR、NFDATA、NFSTAT和其他与ECC有关的寄存器。对NAND Flash控制器的操作，S3C2410和S3C2440有一点小差别：有些寄存器的地址不一样，有些寄存器的内容不一样。
+       NAND Flash的读写操作次序如下：
+       (a. 设置NFCONF（对于S3C2440，还要设置NFCONT）寄存器，配置NAND Flash
+       (b. 向NFCMD寄存器写入命令
+       (c. 向NFADDR寄存器写入地址
+       (d. 读写数据：通过寄存器NFSTAT检测NAND Flash的状态，在启动某个操作后，应该检测R/nB信号以确定操作是否完成和成功。
+
+    2. 寄存器介绍
+       (1) NFCONF：NAND Flash配置寄存器
+           这个寄存器在S3C2410和S3C2440上功能有所不同
+	   <1>. S3C2410的NFCONF寄存器
+	        被用来使能/禁止NAND Flash控制器、使能/禁止控制引脚信号nFCE、初始化ECC、设置NAND Flash的时序参数等。
+		TACLS、TWRPH0和TWRPH1这3个参数控制的是NAND Flash信号线CLE/ALE与写控制信号nWE的时序关系。
+           <2>. S3C2440的NFCONF寄存器
+	        被用来设置NAND Flash的时序参数发TACLS、TWRPH0、TWRPH1，设置数据位宽；还有一些只读位，用来指示是否支持其他大小的页（比如一页大小为256/512/1024/2048字节）。
+		它没有实现S3C2410的NFCONF寄存器的控制功能，这些功能在S3C2440的NFCONT寄存器里实现。
+	(2) NFCONT：NAND Flash控制寄存器，S3C2410没有这个寄存器。
+	    被用来使能/禁止NAND Flash控制器、使能/禁止控制引脚信号nFCE、初始化ECC。它还有其他功能，在一般的应用中用不到，比如锁定NAND Flash。
+        (3) NFCMD：NAND Flash命令寄存器
+	    对于不同型号的Flash，操作命令一般不一样。
+	(4) NFADDR：NAND Flash地址寄存器
+	    当写这个寄存器时，它将对Flash发出地址信号
+	(5) NFDATA：NAND Flash数据寄存器
+	    只用到低8位，读写此寄存器将启动对NAND Flash的读、写数据操作
+	(6) NFSTAT：NAND Flash状态寄存器
+	    只用到位0，0：Busy，1：Ready。
+
+四、读NAND Flash的步骤
+    下面讲述如何从NAND Flash中读出数据，假设读地址为addr。
+    1.设置NFCONF（对于S3C2440，还要设置NFCONT）
+      (1). 对于S3C2410
+           在本实例中设为0x9830，使能NAND Flash控制器、初始化ECC、NAND Flash片选信号nFCE=1（inactive，真正使用时再让它等于0），设置TACLS＝0，TWRPH0＝3，TWRPH1＝0.这些时序参数的含义为：TACLS＝1个HCLK时钟，TWRPH0＝4个HCLK时钟，TWRPH1＝1个HCLK时钟。
+      (2). 对于S3C2440
+           时间参数也设为：TACLS＝0，TWRPH0＝3，TWRPH1＝0.NFCONF寄存器的值为0x300。NFCONT寄存器的取值为NFCONT＝(1 << 4) | (1 << 1) | (1 << 0)，表示使能NAND Flash控制器、禁止控制引脚信号nFCE、初始化ECC。
+
+    2. 在第一次操作NAND Flash前，通常复位一下NAND Flash
+      (1). 对于S3C2410
+           NFCONF &= ~(1 << 11) (发出片选信号)
+	   NFCMD = 0xff  (reset命令)
+	   然后循环查询NFSTAT位0，直到它等于1。最后禁止片选信号，在实际使用NAND Flash时再使能。
+	   NFCONF |= (1 << 11)（禁止NAND Flash）
+      (2). 对于S3C2440
+           NFCONT &= ~(1 << 11) (发出片选信号)
+	   NFCMD = 0xff (reset命令)
+	   然后循环查询NFSTAT位0，直到它等于1。
+	   最后禁止片选信号，在实际使用NAND Flash时再使能。
+	   NFCONT |= 0x2 (禁止NAND Flash)
+
+     3. 发出读命令
+        先使能NAND Flash，然后发出读命令
+	(1). 对于S3C2410
+	    NFCONF &= ~(1 << 11) (发出片选信号)
+	    NFCMD = 0 (读命令)
+	(2). 对于S3C2440
+	    NFCONT &= ~(1 << 11) (发出片选信号)
+	    NFCMD = 0 (读命令)
+
+     4. 发出地址信号
+        注意，在对地址操作的4个步骤对应的地址线中没有用到A8（它由读命令设置）：
+	NFADDR = addr & 0xff
+	NFADDR = (addr >> 9) & 0xff  (左移9位，不是8位)
+	NFADDR = (addr >> 17) & 0xff (左移17位，不是16位)
+	NFADDR = (addr >> 25) & 0xff (左移25位，不是24位)
+
+     5. 循环查询NFSTAT位0，直到它等于1，这时可以读取数据了 
+
+     6. 连续读NFDATA寄存器512次，得到一页数据(512字节)
+        循环执行第3、4、5、6这4个步骤，直到读出所要求的所有数据。
+
+     7. 最后，禁止NAND Flash的片选信号
+        (1). 对于S3C2410
+   	    NFCONF |= (1 << 11)
+        (2). 对于S3C2440
+            NFCONT |= (1 << 1)	
+
+
+五、代码详解
+    源文件分为head.S、init.c和main.c。
+    连接脚本nand.lds把它们分为两部分，nand.lds代码如下：
+         SECTIONS{
+		 firstst 0x00000000: { head.o init.o nand.o }
+		 second 0x30000000 : AT(4096) { main.o }
+	 }
+         head.o,init.o,nand.o这3个文件的运行地址为0，它们在生成的映像文件中的偏移地址也为0（从0开始存放）。main.o的运行地址为0x30000000，它在生成的映像文件中的偏移地址为4096。
+     head.S调用init.c中的函数来关WATCHDOG、初始化SDRAM；调用nand.c中的函数来初始化NAND Flash，然后将main.c中的代码从NAND Flash地址4096开始复制到SDRAM；最后跳转到main.c中的main函数继续执行。
+     由于S3C2410和S3C2440的NAND Flash控制器并非完全一样，这个程序如果要能同时处理两种CPU，需要分辨出是2410还是2440，然后使用不同的函数进行处理。这可以通过读取GSTATUS1寄存器来实现，如果是0x32440001就是S3C2440。
+     nand.c向外引出两个函数：用来初始化NAND Flash的nand_init函数、用来将数据从NAND Flash读到SDRAM的nand_read函数。
+
+    
+     void nand_init(void)  
+     {
+#define TACLS 0
+#define TWRPH0 3
+#define TWRPH1 0
+	     if((GSTATUS1 == 0x32410000) || (GSTATUS1 == 0x32310002)){
+		     nand_chip.nand_reset = s3c2410_nand_reset;
+		     ...
+	     }else{
+		     nand_chip.nand_reset = s3c2440_nand_reset;
+		     nand_chip.wait_idle = s3c2440_wait_idle;
+		     nand_chip.nand_select_chip = s3c2440_nand_select_chip;
+		     nand_chip.nand_deselect_chip = s3c2440_nand_deselect_chip;
+		     nand_chip.write_cmd = s3c2440_write_cmd;
+		     nand_chip.write_addr = s3c2440_write_addr;
+		     nand_chip.read_data = s3c2440_read_data;
+
+		     //设置时序
+		     s3c2440nand->NFCONF = (TACLS << 12) | (TWRPH0 << 8) | (TWRPH1 << 4);
+		     //使能NAND Flash控制器，初始化ECC，禁止片选
+		     s3c2440nand->NFCONT = (1 << 4) | (1 << 1) | (1 << 0);
+	     }
+
+	     nand_reset();
+     }
+     
+
+
+     void nand_read(unsigned char *buf, unsigned long start_addr, int size)
+     {
+	     int i, j;
+	     if((start_addr & NAND_BLOCK_MASK) || (size & NAND_BLOCK_MASK))
+		     return;
+
+	     //1. 选中芯片
+	     nand_select_chip();
+
+	     for(i = start_addr; i < (start_addr + size); ){
+		     // 2. 发出READ0命令
+		     write_cmd(0);
+
+		     //3. 发出地址信息
+		     write_addr(i);
+
+		     // 4. 等待就绪
+		     wait_idle();
+
+		     //5. 读取数据
+		     for(j = 0; j < NAND_SECTOR_SIZE; j++, i++){
+			     *buf = read_data();
+			     buf++;
+		     }
+	     }
+	     //6. 取消片选信号
+	     nand_deselect_chip();
+	     return;
+     }

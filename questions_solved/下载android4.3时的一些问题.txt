@@ -1,0 +1,7 @@
+使用命令  "~/bin/repo init -u https://android.googlesource.com/a/platform/manifest -b android-4.3_r2.1"
+一、出现UnicodeDecodeError:'ascii' codec can't ..... range(128)
+	加上如下三行
+	import sys
+	reload(sys)
+	sys.setdefaultencoding('utf-8'), 删除rm -rf .repo/manifest.git/
+二、出现什么问题忘了，可能的解决是rm -rf ~/.repoconfig 或者 rm -rf .repo 

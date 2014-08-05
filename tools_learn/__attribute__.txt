@@ -1,0 +1,9 @@
+一、__attribute__(weak, alias("new_name"));
+   Weak Alias是gcc扩展里的东西，实际上是函数的属性。这个东西在库的实现里面可能会经常用到，比如glibc里面就用到不少。gcc手册里面的解释如下：
+    “In GNU C, you declare certain things about functions called in your program which help the compiler optimize function calls and check your code more carefully.”
+    dummy.c:
+       int __foo() { puts("I do nothing."); }
+       int foo() __attribute__((weak, alias("__foo")));
+    func.c:
+       int foo(){ puts("I do something."); }
+    weak和alias分别是两个属性。weak使得foo这个符号在目标文件中作为weak symbol而不是global symbol。给函数加上weak属性时，即使函数没定义，函数被调用也可以编译成功。而alias则使foo是_foo的一个别名，__foo和foo必须在同一编译单元中定义，否则会编译出错。如果我们编译func.c和dummy.c得到两个目标文件，当我们同时使用func.o和dummy.o和其他目标文件进行链接时，如果其他目标文件里面引用符号foo，最终使用到的是func.c中定义的函数，而不是__foo，虽然它有一个别名。当然，单独使用dummy.o链接的话使用的是那个“不做事”的函数。如果dummy.o中的foo不是weak symbol的话，在链接时会产生冲突，这就是要使用weak的原因。

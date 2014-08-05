@@ -1,0 +1,220 @@
+一、S3C2440 ADC和触摸屏接口概述、
+    S3C2440的CMOS模数转换器（ADC，Analog To Digial Converter）可以接收8个通道的模拟信号输入，并将它们转换为10位的二进制数据。在2.5MHz的AD转换时钟下，最大的转化速率可达500KSPS（SPS：sample per second，每秒采样的次数）。
+    S3C2440提供了与触摸屏直接相连的4个引脚，不再需要外接晶体管。
+    S3C2440 ADC和触摸屏接口有如下特性：
+     + 分辨率：10位
+     + 微分线性度误差：正负1.0LSB
+     + 积分线性度误差：正负2.0LSB
+     + 最大转换速率：500KSPS
+     + 低功耗
+     + 供电电压：3.3V
+     + 输入模拟电压范围：0～3.3V
+     + 片上采样保持功能
+     + 普通转换模式
+     + 分离的x/y轴坐标转换模式
+     + 自动（连续）x/y轴坐标转换模式
+     + 等待中断模式
+
+     ADC和触摸屏接口中只有一个A/D转换器，可以通过设置寄存器来选择对哪路模拟信号（多达8路）进行采样。产生两个中断信号：INT_ADC、INT_TC，分别表示AD转换器已经转换完毕，和表示触摸屏被按下。
+     S3C2440在使用触摸屏时，引脚XP、XM、YP和YM被用于和触摸屏直接相连，只剩下AIN[3:0]共4个引脚用于一般的ADC输入；当不使用触摸屏时，XP、XM、YP和YM这4个引脚也可以用于一般的ADC输入。
+
+二、S3C2440 ADC接口的使用方法
+    ADC的启动方式有两种：手工启动、读结果时就自动地启动下一次转换。也有两种方法获当前转换是否已经结束：查询状态位、转换结束时发出中断。
+    ADC的操作涉及3个寄存器：ADCCON、ADCTSC、ADCDAT0.
+
+    1. ADCCON寄存器
+    包含位：
+     ECFLG（[15] AD转换结束标志，转换结束？）
+     PRSCEN（[14] AD转换器的时钟使用预分频？）
+     PRSCVL（[13:6] 预分频系数，取值0～255：AD时钟=PCLK/(PRSCVL+1)）
+     SEL_MUX（[5:3] AD转换的通道。取值分别对应AIN0、AIN1、AIN2、AIN3、YM、YP、XM、XP）
+     STDBM（[2] 正常模式？静态模式Standby mode？）
+     READ_START([1] 读转换数据时启动下一次转换？）
+     ENABLE_START（[0] 启动AD转换？）
+
+     2. ADCDAT0寄存器
+     包含位：
+     UPDOWN（[15] 对于触摸屏，使用“等待中断模式时：触摸屏被按下？）
+     AUTO_PST（[14] 使用自动（连续）x/y轴坐标转换模式？正常转换？）
+     XY_PST（[13:12] 手动x/y轴坐标转换模式：无操作？x轴坐标转换？y轴坐标转换？等待中断模式？）
+     Reserved（[11:10] 保留）
+     XPDATA（[9:0] X轴坐标转换数据值（或普通ADC转换数据值），范围在0～0x3FF）
+
+    ADC的使用分为4个步骤：
+   （1）设置ADCCON寄存器，选择输入信号通道，设置AD转换器的时钟。
+        使能AD转换器时钟的预分频功能时，AD时钟的计算公式如下：
+         AD时钟=PCLK/(PRSCVL+1)
+   （2）设置ADCTSC寄存器，使用设为普通转换模式，不使用触摸屏功能。
+        ADCTSC寄存器多用于触摸屏，对于普通ADC，使用它的默认值即可，或设置其位[2]为0.
+   （3）设置ADCCON寄存器，启动AD转换
+        如果设置READ_START位，则读转换数据（读ADCDAT0寄存器）时即启动下一次转换；否则，可以通过设置ENABLE_START来启动AD转换。
+   （4）转换结束时，读取ADCDAT0寄存器获得数值。
+    如果使用查询方式，则可以不断读取ADCCON寄存器的ECFLG位来确定转换是否结束；否则可以使用INT_ADC中断，发生INT_ADC中断时表示转换结束。
+
+
+三、触摸屏原理及接口
+   电阻触摸屏的使用很广泛，分为几种类型，如四线、五线、八线，线越多精度越高，温度漂移也越少。基本的操作是一样的，本质上是个电阻分压大吼，将矩形区域中触摸点（x，y）的物理位置转换为代表x坐标和y坐标的电压。
+   S3C2440的触摸屏接口可以驱动四线电阻触摸屏。在电阻触摸屏中，有两层相互绝缘的导电层，当按压时会在触点处相连；不同的触点在x、y方向上的分压值不一样，将这两个电压值经过AD转换后即可得到x、y坐标。
+
+
+   触摸屏控制器有4种工作模式：
+   （1）等待中断模式（Waiting for Interrupt Mode）
+     设置ADCTSC寄存器为0xD3即可令触摸屏控制器处于这种模式。这时，它在等待触摸屏被按下。当触摸屏被按下时，触摸屏控制器将发出INT_TC中断信号，这时触摸屏控制器要转换以下两种工作模式中的一种，以读取x、y坐标。在S3C2440中可以设置ADCTSC寄存器的位8为0或1时，表示等待Pen Down中断或Pen Up中断。
+   （2）分离的x/y轴坐标转换模式（Separate X／Y Position Conversion Mode）
+     设置ADCTSC寄存器为0x69进入x轴坐标转换模式，x坐标值转换完毕后写入ADCDAT0，然后发出INT_TC中断；相似地，设置ADCTSC寄存器为0x9A进入y轴坐标转换模式，y坐标值转换完毕后被写入ADCDAT1，然后发出INT_ADC中断。
+   （3）自动（连续）x／y轴坐标转换模式（Auto（Sequential）x／y Posistion Conversion Mode）
+     （2）中的两个步骤可以合为一个步骤，设置ADCTSC寄存器为0X0C，进入该模式。触摸屏控制器就会自动转换触点的x、y坐标值，并分别写入ADCDAT0、ADCDAT1寄存器中，然后发出INT_ADC中断
+   （4）普通转换模式（Normal Conversion Mode）
+      不使用触摸屏时，触摸屏控制器处于这种模式。在这种模式下，可以通过设置ADCCON寄存器启动普通的AD转换，转换完成时数据被写入ADCDAT0寄存器中。
+
+   ADCTSC寄存器被用来选择触摸屏的工作模式，包含如下位：
+     Reserved/UD_SEN（[8] 哪类中断：按下？松开？）
+     YM_SEN（[7] 使能YM驱动？（使能则接地，否则为高阻））
+     YP_SEN（[6] 使能YP开关？（使能则接模拟输入，否则接外部电压））
+     XM_SEN（[5] 使能XM开关？（使能则接地，否则为高阻））
+     XP_SEN（[4] 使能XP开关？（使能则接模拟输入，否则接外部电压））
+     PULL_UP（[3] XP上拉使能？）
+     AUTO_PST（[2] 使用自动（连续）x／y轴坐标转换模式？））
+     XP_PST（[1:0] 手动测量x、y轴坐标：无操作模式？测量x轴坐标？测量y轴坐标？等待中断模式？）
+
+   对于S3C2440，当CPU处于休眠模式时，触摸屏被按下时可以不断发出INT_TC中断信号以唤醒CPU。发出中断信号的间隔可以通过ADCDLY寄存器来设置。
+   另外，对于普通转换模式、分离的xy轴坐标转换模式、自动xy坐标转换模式，都可以通过ADCDLY寄存器来设置采样的延时时间。
+
+   ADCDLY寄存器格式中包括：DELAY（[15:0] 采样的延时值，或发出中断的间隔值）。
+
+   ADCDAT0和ADCDAT1中分别保存x、y坐标值，格式相似，如下：
+     UPDOWN（[15] 使用等待中断模式时：触摸屏被按下？）
+     AUTO_PST（[14] 使用自动xy轴坐标转换模式？）
+     XY_PST（[13:12] 手动xy轴坐标转换模式，同前面）
+     Reserved（[11:10] 保留）
+     YPDATA（[9:0] x轴坐标转换数据值）
+
+
+
+四、操作实例
+    测试ADC或触摸屏：测试ADC时，程序不断测量AIN0、AIN1的电压，并在串口上显示出来；测试触摸屏时，测试触笔按下、松开的事件，并且打印出按下时采集到的x、y坐标，它们只是原始的数据。
+
+   1. 测试ADC的代码
+     （1. ADC主入口函数Test_ADC
+        void Test_ADC(void)
+	{
+		float vol0, vol1;
+		int t0, t1;
+
+		while(!awaitkey(0)){
+			//发起AD转换，返回10位转换值，计算电压值
+			vol0 = ((float)ReadAdc(0) * 3.3) / 1024.0;
+			vol1 = ((float)ReadAdc(1) * 3.3) / 1024.0;
+		
+			t0 = (vol0 - (int)vol0) * 1000;
+			t1 = (vol1 - (int)vol1) * 1000;
+		}
+	}
+			
+      （2. ReadAdc函数：设置、启动ADC，获取转换结果
+       
+         /* 使用查询方式读取AD转换值，输入参数ch表示模拟信号通道，取值0～7 */
+        static int ReadAdc(int ch)
+	{
+		//选择模拟通道，使能预分频功能，设置AD转换器的时钟=PCLK/(49+1)
+		ADCCON = PRESCALE_EN | PRESCVL(49) | ADC_INPUT(ch);
+
+		//清除位2，设为普通转换模式
+		ADCTSC &= ~(1 << 2);
+
+		//设置位0为1，启动AD转换
+		ADCCON |= ADC_START;
+
+		//当AD转换真正开始时，位0会自动清0
+		while(ADCCON & ADC_START);
+
+		//检测位15，当它为1时表示转换结束
+		while(!(ADCCON & ADC_ENDCVT));
+
+		return (ADCDAT0 & 0x3ff);
+	}
+
+
+    2. 测试触摸屏代码 
+      （1. 触摸屏的主入口函数Test_Ts
+        Test_Ts函数进行初始化、开启ADC中断之后，就不再参与触摸屏的操作，其他都是通过中断服务程序来完成。
+	开始  ->  开启INT_ADC/INT_TC中断   -> 初始化触摸屏控制器 ->  进入等待中断模式 ->  等待Pen Down中断模式  ->  进入自动X/Y轴坐标转换模式
+	           |                         |
+		   |                         |
+		   <-- 等待Pen Up中断模式 <---
+
+         void Test_Ts(void)
+	 {
+		 isr_handle_array[ISR_ADC_OFT] = AdcTsIntHandle;  //设置ADC中断服务程序
+		 INTMSK &= ~BIT_ADC;   //开启ADC总中断
+		 INTSUBMSK &= ~(BIT_SUB_TC); //开启INT_TC中断，即触摸屏被按下或松开时产生中断
+		 INTSUBMSK &= ~(BIT_SUB_ADC); //开启INT_ADC中断，即AD转换结束时产生中断
+
+		 //使用预分频功能，设置AD转换器的时钟=PCLK/(49+1)
+		 ADCCON = PRESCALE_EN | PRESCVL(49);
+
+		//采样延时时间=(1/3.6864M)*50000 = 13.56ms，即按下触摸屏后，再过13.56ms才能采样
+		 ADCDLY = 50000;
+
+		 //进入“等待中断模式”，等待触摸屏被按下
+		 wait_down_int();
+
+		 //屏蔽ADC中断
+		 INTSUBMSK |= BIT_SUB_TC;
+		 INTSUBMSK |= BIT_SUB_ADC;
+		 INTMSK |= BIT_ADC;
+	 }
+
+
+	//进入等待中断模式，等待触摸屏被按下
+         #define wait_down_int() { ADCTSC = DOWN_INT | XP_PULL_UP_EN | \
+		 			XP_AIN | XM_HIZ | YP_AIN | YM_GND | \
+		 			XP_PST(WAIT_INT_MODE);
+         //进行等待中断模式，等待触摸屏被松开
+         #define wait_up_int() { ADCTSC = UP_INT | XP_PULL_UP_EN | XP_AIN | \
+		 			XM_HIZ | YP_AIN | YM_GND | \
+		 			XP_PST(WAIT_INT_MODE);
+
+         //进入自动x/y轴坐标转换模式
+         #define mode_auto_xy() { ADCTSC = CONVERT_AUTO | XP_PULL_UP_DIS | \
+ 					XP_PST(NOP_MODE);		 
+
+
+       （2.触摸屏中断处理函数：转换触摸屏的工作模式
+	   //判断并分发中断处理
+	   void AdcTsIntHandle(void)
+	   {
+		   if(SUBSRCPND & BIT_SUB_TC)
+			   Isr_Tc();
+		   if(SUBSRCPND & BIT_SUB_ADC)
+			   Isr_Adc();
+	   }
+
+          
+           static void Isr_Tc(void)
+	   {
+		   if(ADCDAT0 & 0x8000){
+			   //进入“等待中断模式”，等待触摸屏被按下
+			   wait_down_int();
+		   }else{
+			   mode_auto_xy();
+
+			   ADCCON |= ADC_START;
+		   }
+
+		   SUBSRCPND |= BIT_SUB_TC;
+		   SRCPND |= BIT_ADC;
+		   INTPND |= BIT_ADC;
+	   }
+
+	   static void Isr_Adc(void)
+	   {
+		   //打印x、y坐标值
+		   printf("xdata = %4d, ydata = %4d\r\n", (int)(ADCDAT0 & 0x3ff), (int)(ADCDAT1 & 0x3ff));
+		   wait_up_int();   // 进入等待中断模式，等待触摸屏被松开
+
+		   //清除INT_ADC中断
+		   SUBSRCPND |= BIT_SUB_TC;
+		   SRCPND |= BIT_ADC;
+		   INTPND |= BIT_ADC;
+	   }

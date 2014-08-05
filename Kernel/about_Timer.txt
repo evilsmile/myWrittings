@@ -1,0 +1,2 @@
+   x86平台提供了多种时钟，包括PIT(Programmable Interrupt Timer,可编程中断时钟)、RTC(Real Time Clock，实时时钟)、 TSC(Time Stamp Counter，时间戳计数器)、LAPIC Timer和HPET等。
+   操作系统可以根据需要使用其中的一种或多种时钟，但是同时使用多个时钟将带来过多的时钟中断，从而影响系统的性能。在有高精度时钟可用的时候，现代操作系统往往禁用低精度的时钟，并根据需要使用高精度的时钟模拟低精度的时钟。

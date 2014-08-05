@@ -1,0 +1,1 @@
+在目录~/.cache/google-chrome/Default/Media Cache/下存放了在线听过的音乐

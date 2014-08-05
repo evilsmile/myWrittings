@@ -1,0 +1,19 @@
+	解决用gdb调试跟踪wine时无法跟入wine_init的问题
+1.wine客户端在载入PE映像过程中，为了让PE映像正确运行。需要预先分配好它该占用的地址空间，所以wine的执行过程比较曲折和特殊。
+首先在shell上执行wine xx.exe命令后，由shell启动新进程运行wine程序，而后wine会调用exec()将自己由wine-preloader程序取代，调整命令行参数，使得命令变成wine-preloader wine xx.exe。而进程空间的预先分配和保留则由wine-preloader来完成。
+wine-preloader在完成空间预先占用后，又再次载入wine的映像和为了加载wine需要的动态库的/lib/ld-linux.so（即wine的解释器），控制权转交给解释器。而解释器完成解析后跳转到wine的入口地址，再次运行wine。
+所以在wine的源代码loader/main.c中有一个对环境变量WINELOADERNOEXEC是否存在的判断，第一次运行wine的时候这个变量是不存在的，所以会去执行wine-preloader相关代码，设置该环境变量；第二次进入wine的时候由于已经有了这个环境变量，就进入wine_init运行。
+粗糙简陋的背景铺垫就是这样了，下面问题就来了。
+当用gdb wine xx.exe试图跟踪时，从第一次执行wine到exec()载入wine-preloader的过程都跟踪到没有问题，但是由wine-preloader将执行权转交到ld-linux.so再回到wine的过程却怎么也跟踪不到了，即使在wine_init处设置断点也根本不会停下，而是直接运行结束。
+我想是因为，首先gdb载入wine和由exec()载入wine-preloader时，调试符号都一同正确载入没有问题，但是由ld-linux.so转交到wine的过程，由于先前exec将原来的地址空间覆盖掉，wine原先的调试信息已经不在，gdb无法获得调试信息自然就无法找到位置停下。
+那么要如何解决，问题的关键就在于重新载入调试信息到gdb中。
+首先是重新载入wine的调试信息。由于wine-preloader特意将自己的加载地址和wine的加载地址分开不重叠，所以可以在wine-preloade跳转到ld-linux.so之前，直接通过symbol-file wine读入wine的调试信息，然后在main处设断点(break main)，contiue继续执行。这次的执行流程就越过wine-preloader到了wine_init的跟前。
+可是在wine_init处设断点还是不能让gdb刹住车，因为wine_init是libs/wine/libwine.so中的函数，所以调试信息在libwine.so中。载入它的调试信息就麻烦些了。
+首先应该明白这时候要用的gdb载入命令为add-symbol-file file address，它不光需要符号文件还要载入到内存中的虚拟地址，因为gdb不能自动完成地址对应。
+oh,糟糕，我想起来我的方法好像很麻烦。
+用gdb -tui以多窗口的形式进入gdb，并C-X 2打开汇编语言窗口，可以看到c语言中的wine_init(...)翻译成call   0x7bf00d80 <wine_init@plt>，注意到plt的后缀，刚说了wine_init的调试信息在libwine.so中，所以在wine中wine_init就是一个需要由ld-linux.so来完成重定位的外部函数。0x7bf00d80并不是wine_init的真实地址，而是对应.plt表中一个跳转地址。下面它就跳转到了.got表。在.got表中对应的条目要么对应着ld-linux.so调整后的wine_init地址，或者对应着能完成wine_init函数载入的内存地址处。这种机制就实现了库函数的懒载入模式，也就是只有当这个函数被调用了才会去载入。
+那么我就会获得.got表中的真实地址，而它只有在调用过后才会知道，于是我就修改代码，在wine_init调用前先调用一次wine_init,并传入一个无效参数，同时修改wine_init的代码，使得对这个无效参数直接返回，这样就能获得got表中的地址。至于获得了wine_init在内存中的地址和前头提到的address有什么联系，呵呵，继续先。
+对修改后的代码重新make后，gdb再次走起，运行过wine_init(无效参数)，到正常的wine_init跟前，再次来到汇编窗口查看call 0x7bf00d80<wine_init@plt>，si执行下一条汇编指令，跳转到0x7bf00d80： <wine_init@plt>      jmp    *0x7bf02a5c，用x 0x7bf02a5c查看该内存地址有什么，恩，是0x7bf02a5c： <wine_init@got.plt>: 0xb7ea1508，这就是拥有了wine_init真实地址的.got表，0xb7ea1508.
+拿到了wine_init函数地址，只要根据wine_init在库文件中偏移地址，就得到库文件的载入地址。不过上面的address需要的是.text的地址，所以再查看libwine.so得到.text的偏移地址，将这个偏移量加到库文件的载入地址上，就是最终的address。在我这，用readelf -a libwine.so查看，得到wine_init的偏移量是0x7508，.text的偏移地址是0x3020，那么address = 0xb7ea1508 - 0x7508 + 0x3020 = 0xb709d202。
+gdb执行add-symbol-file libwine.so 0xb709d202，然后break wine_init, contiue, OK，进入了wine_init了。^_^
+欢迎交流，批评，指正。

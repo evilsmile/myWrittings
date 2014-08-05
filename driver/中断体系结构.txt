@@ -1,0 +1,262 @@
+一、ARM体系CPU的7种工作模式
+    用户模式(usr)：ARM处理器正常的程序执行状态
+    快速中断模式(fiq)：用于调整数据传输或通道处理
+    中断模式(irq)：用于通用的中断处理
+    管理模式(svc)：操作系统使用的保护模式
+    数据访问终止模式(abt)：当数据或指令预取终止时进入该模式，可用于虚拟存储及存储保护。
+    系统模式(sys)：运行具有特权的操作系统任务
+    未定义指令中止模式(und)：当未定义的指令执行时进入该模式，可用于支持硬件协处理器的软件仿真。
+    另外，ARM体系的CPU有以下两种工作状态：
+        ARM状态：此时处理器执行32位的字对齐的ARM指令。
+	Thumnb状态：此时处理器执行16位的、半字节对齐的Thumb指令。
+
+    ARM920T有31个通用的32位寄存器和6个程序状态寄存器。这37个寄存器分为7组，进入某个工作模式时就使用它那组的寄存器。有些寄存器，不同的工作模式下有自己的副本，当切换到另一个工作模式时，那个工作模式的寄存器副本将被使用：这些寄存器被称为备份寄存器。
+    在ARM状态下，每种工作模式都有16个通用寄存器和1个（或2个，这取决于工作模式）程序状态寄存器。
+    CPSR（程序状态寄存器）中各位意义如下：
+    (1). T位：置位时，CPU处理Thumb状态；否则处于ARM状态
+    (2). 中断禁止位：I位和F位属于中断禁止位。它们被置位时，IRQ中断、FIQ中断分别被禁止。    (3). 工作模式位：表明CPU处于什么工作模式。
+    等
+
+    当一个异常发生时，ARM920T CPU核将自动完成如下事情：
+    (1). 在异常工作模式的连接寄存器R14中保存前一个工作模式的下一条，即将执行的指令的地址。对于ARM状态，这个值是当前PC值加4或加8.
+    (2). 将CPSR的值复制到异常模式的SPSR
+    (3). 将CPSR的工作模式位设为这个异常对应的工作模式
+    (4). 将PC值等于这个异常模式在异常微量表中的地址，即跳转去执行异常向量表中的相应指令。
+    相反，当从异常工作模式退回到之前的工作模式时，需要通过软件完成如下事情：
+    (1). 前面进入异常工作模式时，连接寄存器中保存了前一工作模式的一个指令地址，将它送去一个适当的值后赋给PC寄存器。
+    (2). 将SPSR的值复制回CPSR。
+    
+
+二、S3C2410/S3c2440中断控制器
+    不论何种CPU，中断的处理过程是相似的。
+    (1). 中断控制器汇集各类外设发出的中断信号，然后告诉CPU。
+    (2). CPU保存当前程序的运行环境（各个寄存器），调用中断服务程序（ISR）来处理这些中断。
+    (3). 在ISR中通过读取中断控制器、外设的相关寄存器来识别这是哪个中断，并进行相应的处理
+    (4). 清除中断：通过读写中断控制器和外设的相关寄存器来实现。
+    (5). 最后恢复被中断程序的运行环境，继续执行。
+
+    SUBSRCPND和SRCPND寄存器表明有哪些中断被触发了，正在等待处理（pending）；SUBMASK（INTSUBMSK寄存器）和MASK（INTMSK寄存器）用于屏蔽某些中断。
+
+    如果被触发的中断中有快速中断（FIQ）---MODE（INTMOD寄存器）中为1的位对应的中断是FIQ，则CPU进入快速中断械（FIQ Mode）进行处理。FIQ只能分配一个，即INTMOD中只能有一位设为1。
+
+    使用中断的步骤如下：
+    (1) 设置好中断模式和快速中断模式下的栈：当发生中断IRQ时，CPU进入中断模式，这时使用中断模式下的栈；当发生快速中断FIQ时，CPU进入快速中断模式，这时使用快速中断模式下的栈。
+    (2) 准备好中断处理函数
+       @ 异常向量
+         在异常向量表中设置好当进入中断模式或快速中断模式时的跳转函数，它们的异常向量地址分别为0x00000018、0x0000001c。
+       @ 中断服务程序
+         IRQ、FIQ的跳转函数，最终将调用具体的中断服务函数。
+	 对于IRQ，读取INTPND寄存器或INTOFFSET寄存器的值来确定中断源，然后分别处理。
+	 对于FIQ，因为只有一个中断可以设为FIQ，无须判断中断源。
+       @ 清除中断：如果不清除中断，则CPU会误以为这个中断又发生了一次。
+     (3) 进入、退出中断模式或快速中断模式时，需要保存、恢复被中断程序的运行环境。
+       * 对于IRQ，进入和退出的代码如下：
+          sub lr, lr, #4              @ 计算返回地址
+	  stmdb sp!, {r0-r12, lr}     @ 保存使用到的寄存器
+	  ... ...		      @ 处理中断 
+	  ldmia sp!, {r0-r12, pc}^    @ ^表示将spsr的值赋给cpsr
+       * 对于FIQ，进入和退出的代码如下：
+          sub lr, lr, #4              @ 计算返回地址
+	  stmdb sp!, { r0-r7, lr}     @ 保存使用到的寄存器
+	  ... ...                     @ 处理中断
+	  ldmia sp!, {r0-r7, pc}^     @ ^表示将spsr的值赋给cpsr
+
+     (4) 根据具体中断，设置相关外设。比如对于CPIO中断，需要将相应引脚的功能设为“外部中断”、设置中断触发条件（低电平触发、高电平触发、下降沿触发还是上升沿触发）等。一些中断拥有自己的屏蔽寄存器，还要开启它。
+     (5) 对于"Request sources (without sub-register)”中的中断，将INTSUBMSK寄存器中相应位设为0。
+     (6) 确定使用此中断的方式：FIQ或IRQ
+         如果是FIQ，则在INTMOD寄存器中设置相应位为1.
+	 如果是IRQ， 则在PRIORITY寄存器中设置优先级。
+     (7) 如果是IRQ，将INTMSK寄存器中相应位设为0（FIQ不受INTMSK寄存器控制）
+     (8) 设置CPSR豁口中的I-bit（对于IRQ）或F-bit（对于FIQ）为0， 使能IRQ或FIQ。
+
+三、中断控制寄存器
+    SUBSRCPND、INTSUBMSK这两个寄存器中相同的位对应相同的中断；SRCPND、INTMSK、INTMOD、INTPND这4个寄存器中相同的位对应相同的中断。
+    1. SUBSRCPND寄存器（SUB SOURCE PENDING）
+       SUBSRCPND寄存器被用来标识INT_RXD0、INT_TXD0等中断（S3C2410中这类中断有11个，而S3C2440中有15个）是否已经发生，每位对应一个中断。当这些中断发生并且没有被INTSUBMSK寄存器屏蔽，则它们听若干位将“汇集”出现在SRCPND寄存器的一位上。比如SUBSRCPND寄存器中的3个中断INT_RXD0、INT_TXD0、INT_ERR0，只要有一个发生了并且它没有被屏蔽，则SRCPND寄存器中的INT_UART0位被置1.
+       要清除中断时，往SUBSRCPND寄存器中某位写入1即可令此位为0；写入0无效果，数据保持不变。
+       SUBSRCPND寄存器中各位对应的中断、SUBSRCPND寄存器中哪几位“汇集”成SRCPND寄存器中的哪一位，可参考数据手册。
+
+     2. INTSUBMSK寄存器（INTERRUPT SUB MASK）
+       INTSUBMSK寄存器被用来屏蔽SUBSRCPND寄存器所标识的中断。INTSUBMSK寄存器中某位被设为1时，对应的中断被屏蔽。
+
+     3. SRCPND寄存器（SOURCE PENDING）
+        SRCPND中每一位被用来表示一个（或一类）中断是否已经发生，两类即使用SUBSRCPND/INTSUBMSK控制的中断和不使用SUBSRCPND/INTSUBMSK控制的中断。
+	SRCPND寄存器的操作与SUBSRCPND寄存器相似，若想清除某一位，往此位写入1.
+	SRCPND寄存器中各位对应哪个（或哪类）中断，可参考数据手册。
+     4. INTMSK寄存器（INTERRUPTT MASK）
+        INTMSK寄存器被用来屏蔽SRCPND寄存器所标识的中断。INTMSK寄存器中某位被设为1时，对应的中断被屏蔽。
+	INTMSK寄存器只能屏蔽被设为IRQ的中断，不能屏蔽被设为FIQ的中断。
+     5. INTMOD寄存器（INTERRUPT MODE）
+         当INTMOD寄存器中某位被设为1时，它对应的中断被设为FIQ，即此中断发生时，CPU将进入快速中断模式，这通常用来处理特别紧急的中断。
+     6. PRIORITY寄存器
+
+     7. INTPND寄存器（INTERRUT PENDING）
+        经过中断优先级仲裁器选出优先级最高的中断后，这个中断在INTPND寄存器中的相应位被置1，随后，CPU将进入中断模式处理它。
+        同一时间内，此寄存器只有一位被置1；在ISR中，可以根据这个位确定是哪个中断。清除中断时，往这个位写入1.
+     8. INTOFFSET寄存器（INTERRUPT OFFSET）
+        这个寄存器被用来表示INTPND寄存器中哪位被置1了，即INTPND寄存器中位[x]为1时，INTOFFSET寄存器的值为x（x为0～31）。
+        在清除SRCPND、INTPND寄存器时，INTOFFSET寄存器被自动清除。	
+
+四、代码详解
+    4个源文件：head.S、init.c、interrupt.c、main.c
+
+    1. head.S
+       @******************************************************
+       @ File: head.S
+       @ 功能：初始化，设置中断模式、系统模式的栈，设置好中断处理函数
+       @******************************************************
+
+       .extern main
+       .text
+       .global _start
+       _start:
+       @******************************************************
+       @ 中断微量，本程序中，除Reset和HandleIRQ外，其他异常都没使用
+       @******************************************************
+
+       		b Reset
+       @ 0x04: 未定义指令中止模式的向量地址
+       HandleUndef:
+       		b HandleUndef 
+
+       @ 0x08: 管理模式的向量地址，通过SWI指令进入此模式
+       HandleSWI:
+       		b HandleSWI
+
+       @ 0x0c: 指令预取终止导致的异常的向量地址
+       HandlePrefetchAbort:
+       		b HandlePrefetchAbort
+
+       @ 0x10: 数据访问终止导致的异常的向量地址
+       HandleDataAbort:
+       		b HandleDataAbort
+
+       @ 0x14: 保留
+       HandleNotUsed:
+       		b HandleNotUsed
+
+       @ 0x18: 中断模式的向量地址
+       		b HandleIRQ
+
+       @ 0x1c: 快中断模式的向量地址
+       HandleFIQ:
+       		b HandleFIQ
+
+       Reset:
+       		ldr sp, =4096
+		bl disable_watch_dog
+
+		msr cpsr_c, #0xd2     @进入中断模式
+		ldr sp, =3072         @设置中断模式栈指针, 对应sp_irq寄存器
+
+		msr cpsr_c, #0xdf     @进入系统模式
+		ldr sp, =4096         @设置系统模式栈指针,对应sp_sys寄存器
+		                      @其实复位之后，CPU就处于系统模式
+				      @前面的"ldr sp, =4096"完成同样的功能，此句可省略
+                bl init_led           @初始化LED的GPIO管脚
+		bl init_irq           @调用中断初始化函数，在init.c中
+		msr cpsr_c, #0x5f     @设置I-bit=0，开IRQ中断
+
+		ldr lr, =halt_loop    @设置返回地址
+		ldr pc, =main         @调用main
+
+	halt_loop:
+		b halt_loop      
+	
+	HandleIRQ:
+		sub lr, lr, #4        @计算返回地址
+		stmdb sp!, {r0-r12, lr} @保存使用到的寄存器
+		                        @注意，此时的sp是中断模式的sp
+					@初始值是上面设置的3072
+
+		ldr lr, =int_return     @设置调用ISR即EINT_Handle函数后的返回地址
+		ldr pc, =EINT_Handle    @调用中断服务函数，在interrupt.c中
+
+        int_return:
+		ldmia sp!, {r0-r12, pc}^  @中断返回，^表示将spsr的值复制到cpsr
+
+
+
+      2. init.c
+         /* 
+	  *  初始化GPIO引脚为外部中断
+	  *  GPIO引脚用作外部中断时，默认为低电平触发、IRQ方式（不用设置INTMOD）
+	  */
+         void init_irq()
+         {
+		 //设置K1～K4对应的GPIO管脚为中断功能
+		 CPFCON = GPF0_eint | GPF2_eint;
+		 GPFCON = GPG3_eint | GPG11_eint;
+
+		 //对于EINT11、EINT9，需要在EINTMASK寄存器中使能它们
+		 EINTMASK &= (~(1 << 11)) & (~(1 << 19));
+
+		 /*
+		  * 设定优先级：
+		  * ARB_SEL0 = 00b, ARB_MODE0 = 0: REQ1 > REQ3, 即EINT0 > EINT2
+		  * 仲裁器1、6无需设置
+		  * 最终：
+		  * EINT0 > EINT2 > EINT11、EINT19、即K4 > K3 > K1、K2
+		  * EINT11 和EINT19的优先级相同
+		  */
+		 PRIORITY = (PRIORITY&　((~0x01) | (0x3 << 7))) | (0x0 << 7);
+
+		 //EINT0、EINT2、EINT8_23使能
+		 INTMSK &= (~(1 << 0)) & (~(1 << 2)) & (~(1 << 5));
+	 }
+               
+
+        3. interrupt.c
+	   真正的中断处理函数EINT_Handle()
+	   
+	 void EINT_Handle()
+	 {
+		 unsigned long  oft = INTOFFSET;
+		 unsigned long val;
+
+		 switch(oft)
+		 {
+			 case 0:
+			 {
+				 GPBDAT |= (0x0f << 5); //all LEDs off
+				 GPBDAT &= ~(1 << 8);  //LED4 on
+				 break;
+			 }
+
+			 case 2:
+			 {
+				 GPBDAT |= (0xf << 5); //all LEDs off
+				 GPBDAT &= ~(1 << 7); //LED3 on
+				 break;
+			 }
+
+			 case 5:
+			 {
+				 GPBDAT |= (0x0f << 5); //all LEDS off
+
+				 //K1 or K2? or both?
+				 val = EINTPEND;
+				 if(val & (1 << 11))
+					 GPBDAT &= ~(1 << 6);　//K2 pressed, LED2 on
+				 if(val & (1 << 19))
+					 GPBDAT &= ~(1 << 5); //K1 pressed, LED1 on
+				 break;
+			 }
+			 default:
+			 	break;
+		 }
+
+		 //clear interrupt
+		 if(oft == 5)
+			 EINTPEND = (1 << 11) | (1 << 19); //EINT8~EINT23 share IRQ5
+		 SRCPND = 1 << oft;
+		 INTPND = 1 << oft;
+	 }
+
+	4. main.c
+	   
+	   int main()
+	   {
+		   while(1);
+		   return 0;
+	   }

@@ -1,0 +1,5 @@
+首先启动eclimd，在/home/evilsmile/My_Programs/eclipse/plugin/org...../bin/eclimd (注意，不要用~，会出错)
+启动的时候用../..的相对路径，不然会有问题
+然后要注意eclimd的工作目录只认workspace
+
+要想使用android的自动补全，需要把android.jar的路径加到CLASSPATH环境变量里，/home/evilesmile/.../android.jar

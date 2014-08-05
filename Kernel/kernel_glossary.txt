@@ -1,0 +1,592 @@
+A
+
+ABI
+Application Binary Interface, the interface of passed structures between the user processes (and libraries) and the kernel. For compatibility, it is important that these remain as static as possible (i.e. making sure that variables and structure members have the same bytesize as before, and in the same ordering). Occasionally breakage is necessary, requiring re-compilation of the user-space sources (note that this does not affect source-compatibility; that is a separate issue).
+
+ACPI
+Advanced Configuration and Power Interface, replacement for APM that has the advantage of allowing O/S control of power management facilities as well exporting the set of hardware currently present on the system.
+
+AGI
+Address Generation Interlocking, on x86. When execution of an instruction requires an address resulting from a non-completed instruction, the CPU must wait - this is known as an AGI stall.
+
+AGP
+Accelerated Graphics Port, on x86 boxes.
+
+AIO
+Asynchronous IO, IO that is performed without the issuing process blocking on IO completion.
+
+Anticipatory Scheduler
+A disk IO scheduler that leaves the disk idle after a read, in anticipation of the next read.
+
+anonymous
+Generally, used for something which doesn't have the usual associated object. For example an anonymous address space is not interested in user address space (that is, no process context). Some common ones are :
+
+Anonymous page
+A page of memory that is not associated with a file on a file system. This can come from expanding the process's data segment with brk(), shared memory segments, or mmap() with a MAP_ANON or MAP_PRIVATE flag. MAP_PRIVATE, although it maps in data from a file, is considered anonymous because any changes do not get written back to the file (any dirty pages have to be moved to swap if the page is freed from main memory).
+
+Anonymous buffer
+The buffer cache contains buffers of data on their way to/from the disk. An anonymous buffer is not associated with a file. One example of this is data from a deleted file - it will not be written to any file, but is kept around until it is flushed.
+
+ALSA
+Advanced Linux Sound Architecture.
+
+APIC
+See local APIC and IO-APIC.
+
+APM
+Advanced Power Management, power management standard superseded by ACPI. APM and SMP just don't mix.
+
+ARP
+Address Resolution Protocol and this is how a network machine associates an IP Address with a hardware address.
+
+ASN.1
+Abstract Syntax Notation, a protocol for structured data, used, for example, in the Q.3 management protocol.
+
+ast
+Professor Andrew S. Tanenbaum, author of MINIX and several essential O/S books.
+
+ATAPI
+ATA Packet Interface, used by most CD-ROMs, and other devices.
+
+AQuoSA
+Adaptive Quality of Service Architecture.
+
+
+B
+
+balancing
+Technique used in the VM code, referring to balancing various parameters such as the number of pages currently free, to avoid thrashing and other bad memory capacity artefacts. See zones, kswapd bug.
+
+BAR
+Base Address Registers, for PCI devices.
+
+BCD
+Binary-Coded Decimal - see a textbook.
+
+bigmem
+See highmem.
+
+big lock
+kernel_lock, which locks the entire kernel from entry (no other task may run in the kernel code). It is recursive per process and dropped automatically when a process gives up the CPU, then regained on wake-up, in contrast to other spinlocks.
+
+bit error
+Used colloquially to mean a single bit error in some memory address. Often due to faulty memory (ECC memory can correct single bit errors). Often results in fake oopsen, with addresses like 0x0008000. Also seen are values some small offset from zero, plus a bit error, which is where the value passed a NULL check due to the bit error, and then the kernel tried to access a structure member by means of the pointer, leading to the offset.
+
+block bitmap
+In UNIX-like filesystems, the usage of disks blocks is recorded in the block bitmap, where each set bit indicates a specific allocated block.
+
+bottom-half handler
+A set of standard kernel threads that execute tasks on a queue that have been registered with that type of bottom-half handler for execution. The code is run on return to user space or at the end of a hardware interrupt. In 2.3.43 a more general solution with softirqs and tasklets was implemented. Sometimes abbreviated to "bh", which should not be confused with buffer head, which is also abbreviated to "bh".
+
+bounce buffer
+An intermediate buffer. Used for example, in "faking" alignment to a client from non-aligned resources.
+
+brlocks
+Big-reader locks, used when there are many contending for read access to a resource, and very few contending for writes (thus the balance is towards very fast read locking, and very slow write locking).
+
+BSP
+BootStrap Processor, or the CPU which enables the other CPUs in an SMP system.
+
+bss
+Block Storage Segment. This is the memory mapping section containing the data allocated for a binary image at execution time. Also known as "Block Started by Symbol" and "Bull-Shit Storage".
+
+BTB
+Branch Target Buffer, on x86 processors, the cache of recent conditional jump results.
+
+buddy allocator
+The memory allocation scheme used in the kernel. A vector of lists of free pages is kept, ordered by the size of the chunk (in powers of two). When a chunk is allocated, it is removed from the relevant list. When a chunk is freed back to the free pages pool, it is placed in the relevant list, starting from the top. If it is physically contiguous with a present chunk, they are merged and placed in the list above (i.e. where the chunks are twice the size), and this operation percolates up the vector. As regions are merged whenever possible, this design helps to reduce memory fragmentation. FIXME
+
+buffer cache
+The buffer cache is a hash table of buffers, indexed by device and block number. LRU lists are maintained for the buffers in the various states, with separate lists for buffers of different sizes. With 2.3's unification of the buffer and page caches, each buffer head points to part or all of a page structure, through which the buffer's actual contents are available. FIXME
+
+buffer head
+A structure containing information on I/O for some page in real memory. A buffer can be locked during I/O, or in several other states depending on its usage or whether it is free. Each buffer is associated with one page, but every page may have several buffers (consider the floppy on x86, where the I/O blocksize is 512 bytes, but each page is commonly 4096 bytes).
+
+BUG()
+	Used in kernel code in tests for "impossible" conditions. Signify a kernel bug or faulty hardware.
+
+	bus mastering
+	Giving a card on a bus (e.g. ISA,PCI) the ability to read/write directly to main memory. This is how DMA is performed on PCI busses.
+
+	byte sex
+	Endianness.
+
+
+	C
+
+	cache affinity
+	Where the cache of a CPU represents the current memory set used by a task, there is said to be cache affinity with that task. A good thing if the task is regularly scheduled on that CPU. See processor affinity.
+
+	cache coherency
+	On an SMP system, ensuring that the local memory cache of each CPU is consistent with respect to the values which may be stored in other CPUs' caches, avoiding coherency problems such as the "lost update". This is achieved by the hardware in concert with the operating system.
+
+	cache line
+	A section of the hardware cache, around 32 bytes large. Kernel structures are often designed such that the commonly-accessed members all fit into one cache-line, which reduces cache pollution. Structures such as this are cache line aligned.
+
+	cache ping-pong
+	A hardware phenomenon in an SMP system, where two tasks on different CPUs are both accessing the same physical memory in a cache line. This means as each task runs, when it changes the memory, it must invalidate the other CPU's relevant cache line (to ensure cache coherency). Then, when the task on the other CPU runs, it must reload the cache line (as it's set invalid), before changing it. Repeat ad jocularum. A bad thing (TM). A common reason for putting a lock on a different cache line than the data mutexed by the lock : then the "other" task can grab and drop the lock without having to necessarily invalidate the cache line on the first CPU. FIXME
+
+	cache pollution
+	Where during execution of a task, another task is scheduled onto that CPU which disrupts useful lines of the current cache contents, which will be used soon. That is, cache pollution is a non-optimal situation where the other process would have been bettered scheduled on a different CPU or at a different time. The aim is to minimise the need to replace cache lines, obviously increasing efficiency.
+
+	call gate
+	x86 hardware support for mode switch to kernel (i.e. system call). In Linux, int 0x80 will trigger the call gate.
+
+	CAP_*
+	These are defined names of capabilities for specific tasks provided by the kernel, e.g. CAP_SYS_NICE.
+
+	CBQ
+	Class Based Queueing, a hierarchical packet fair queueing qdisc. CBQ Homepage
+
+	CFS
+	Completely Fair Scheduler
+
+	CFQ
+	Completely Fair Queueing, an alternative to the Anticipatory IO scheduler (and the default from 2.6.18 onwards) which allocates IO priority equally between processes.
+
+	chroot jail
+	A process under the aegis of a chroot() syscall is in a chroot jail, and cannot access the file system above its notion of root directory /.
+
+	Classifier
+	(also: filter or tcf) classifies a network packet by inspecting it, used by QDiscs.
+
+	cli/sti
+	x86 assembler instructions for disabling and enabling interrupts, respectively. There are CPU-local and global variants of these. Code running with interrupts disabled must be fast, for obvious reasons (this is called interrupt latency).
+
+	CML2
+	Eric Raymond's proposal for a replacement to the current kernel build system. See http://www.tuxedo.org/~esr/kbuild.
+
+	cold cache
+	A cache whose content is invalid or irrelevant with respect to some task to be run.
+
+	completion ports
+	I/O interface used in O/S's such as Windows NT. Userspace notifies the kernel of each file descriptor the program is interested. The O/S uses a callback for each fd to indicate that I/O is ready.
+
+	contention
+	Where two tasks each want an exclusive resource. You may hear talk of, for example, spinlock contention, which is where one or more tasks is commonly busy-waiting for a spinlock to become unlocked, as it is being taken by other tasks.
+
+	Context switch
+	switching the CPU from running one thread to running another thread.
+
+	Refers to the changes necessary in the CPU when the scheduler schedules a different process to run on the CPU. This involves invalidating the TLB, loading the registers with the saved values, etc. There is an associated cost with such a switch, so it is best to avoid un-necessary context switch when possible. Note that the division of kernel-mode and user-mode means a similar, but simpler, operation is necessary when a syscall moves into kernel mode. However this is not called a context switch, as the mode switch doesn't change the current process. See lazy TLB. One good of feature of Linux is its extremely low context and mode switch cost, compared to an operating system like Solaris.
+
+	Copy-on-Write
+	(also: COW) reuse and share existing objects and copy them not until a modification is required.
+
+	Copy-On-Write, efficiency method where a page or other resource is shared until an attempt to write is made. In that case a copy is made, and the write is done to the copy.
+
+	CPL
+	Current Privilege Level
+
+	critical path
+	A vital code path which should be optimised for the common case. Critical paths are executed frequently and form the important trunk routes of various kernel operations. An example would be buffer head manipulation during file I/O.
+
+	CSS
+	Code Storage Segment, aka text section. This is the memory mapping containing the executable code (text) for a binary image.
+
+	Current
+	a kernel variable which points to the task_struct structure of the process currently running on this CPU.
+
+
+	D
+
+	Device Mapper
+	A technology for presenting arbitrary groupings of underlying sectors on physical devices in a consistent logical fashion usable by higher level algorithms. Heavily used by kernel technologies such as LVM.
+
+	DAG
+	Directed Acyclic Graph
+
+	dancing makefiles
+	An experimental new Makefile set up for configuring and compiling the kernel, written by Michael Elizabeth Chastain.
+
+	dcache
+	The cache of dentry structures. Under UNIX an entry in a particular directory must be searched for linearly, so even if the disk block containing the directory entry list is in-core, there is an associated cost. The dcache stores recent results of these searches which in general speeds up these disk searches by a large factor. Recent 2.3 work uses the dentries to allow multiple mounting, union mount, and more.
+
+	The hardware data cache is usually referred to as the D-cache.
+
+	deadlock
+	Any of a number of situations where two or more processes cannot proceed because they are both waiting for the other to release some resource. FIXME(give good references).
+
+	delayed write
+	See write behind.
+
+	demand zero
+	In demand paging, where the page is to be zeroed when actually created (common case: bss segment of an executable image, which is uninitialised heap data for the executable). Also called ZFOD.
+
+	dentry
+	Directory entry, in-core structure defining a file's details: inode, parent dentry etc. Cached in a hash table indexed by hashed filename (see dcache).
+
+	DF
+	IP packet bit indicating it should not be fragmented. The remote host will return ICMP notifications if the packet had to be split anyway, and these are used in MTU discovery.
+
+	directory notification
+	Provides hooks for notifying tasks when the contents of a directory has changed. Note "contents" can refer to dentries, the file inodes, or even the file contents themselves (file notification).
+
+	DOD
+	Dial-On-Demand for net connections over POTS.
+
+	drop behind
+	In stream I/O conditions, data that has already been read and processed is not needed again. The VM ideally should recognise this and mark the used pages as un-needed, so they can be discarded first. This technique is called "drop behind".
+
+	dss
+	Data Storage Segment, aka data section. This is the memory mapping containing the initialised data for a binary image.
+
+	dual-issue
+	Processors such as the Pentium Pro, that can decode and execute two instructions simultaneously.
+
+	dupe
+	Abbrev. fr. duplication.
+
+	Dwarf
+	Debugging Information Format
+
+	dword
+	Double word, i.e. 4 bytes on x86.
+
+
+	E
+
+	EA
+	See extended attributes.
+
+	eager coalescing
+	What the buddy allocator currently does, i.e. merge adjacent blocks as soon as possible.
+
+	edge-triggered interrupt
+	The interrupt is triggered by the rising or falling edge of the interrupt line. This makes IRQ line sharing difficult, as an edge may occur whilst an ISR is running, and it could be easily missed; to allow sharing level-triggered interrupts are usually used.
+
+	EIP
+	Extended Instruction Pointer. This register contains the PC value of a task, that is, it points to the next instruction to be fetched, decoded etc.
+
+	elevator algorithm
+	This algorithm, often used in disk accesses, keeps an ordered list of requests. When the current request on the disk (e.g. the disk block) has been satisfied, the next strictly greater request on the list is dealt with. When a new request arrives, it is inserted into the ordered list in position (e.g. if the new requested block number is less than the current handled request, it goes before it in the list). When reaching the end of the list, the elevator changes direction, and the situation is reversed.
+
+	ELF
+	Executable Linkable Format, a popular binary format, the default for Linux on most architectures.
+
+	ematch
+	Extended Match, small classification helper attached to classifiers.
+
+	EPIC
+	Explicitly-Parallel Instruction set Computing, an instruction set architecture where every dependency for an instruction is encoded into the instruction itself. This has the potential to be faster as the compiler can encode the data dependencies in the instructions.
+
+	exponential back-off
+	A general algorithm for dealing with contention cases; for example, collisions on a network bus, or contention for a spinlock.
+
+	extended attributes
+	Also known as multi-part or multi-stream files, files with extended attributes deviate from the principle of files being a simple single data stream. An example of extended attributes is the Macintosh's "resource fork", which is associated with a specific file (known as the "data fork").
+
+
+	F
+
+	fair scheduler
+	A scheduler which ensures fairness between users, such that a user's process count and associated cost only impacts that user, rather than the whole system as currently. Rik van Riel and Borislav Deianov have both produced different patches to implement this.
+
+	false sharing
+	On SMP caches, when two parts of single block are accessed, neither of which collide with the other, the cache coherency protocol may not be able to detect this, and mark the block as "shared" even when it isn't. This is known as false sharing.
+
+	fastpath
+	The code path most commonly taken, often optimised heavily at the expense of less frequently-taken blocks of code. This is the reason you see so many gotos in core functions - it produces common-path code far more efficient than an optimising compiler can manage.
+
+	fd
+	file descriptor
+
+	filemap
+	The mapping of a file's contents into memory.
+
+	filesystem--sys
+	"guages" filesystem-based view of kernel objects
+
+	filesystem--config
+	"knobs" filesystem-based manager of kernel objects, or config_items
+
+	filesystem--proc
+	repository for all things task related,
+
+	filesystem--dev
+	devices (with various exceptions, contradictions, confusions, and hysterical raisins ...)
+
+	fixed mmap
+	A user-space request for a mmap starting at a fixed virtual address. Generally not useful or guaranteed to work; a notable exception is overlayed mmaps, where a mmaped area has further mmaps of different types at fixed positions in the map.
+
+	FQDN
+	Fully-Qualified Domain Name, e.g. martyr.darrenemerson.co.uk.
+
+
+	G
+
+	GART
+	For AGP setups, Graphics Aperture Relocation Table.
+
+	gdoc
+	GNOME's source documentation system (similar to javadoc). Available by CVS from gnome. Kernel driver interface descriptions, built from source using gdoc, are currently being written in 2.3.
+
+	GDT
+	Global Descriptor Table. A data structure (x86 arch) for defining segment descriptors (8-byte entries). See IDT.
+
+	get
+	In the kernel, often means "get a reference to". This may be as simple as incrementing a usage count, or it may imply attempting to retrieve an object from a cache of some sort, or allocating kernel memory. See put.
+
+	GKHI
+	Generalised Kernel Hook Infrastructure, an IBM patch to implement hooks into the kernel code.
+
+	GPL
+	I just had to point out that lkml is for Linux kernel development discussions. Please please don't engage in any threads concerning licensing issues, Microsoft, or Richard Stallman. Please.
+
+	group descriptor
+	On-disk filesystem structure, containing information for a block group, such as the inode bitmap and block bitmap.
+
+	GRUB
+	GRand Unified Bootloader, a popular bootloader for Linux, BSD, and other OSes.
+
+	GSI
+	Global System Interrupt. Mainly used in the context of ACPI. Stupid acronym
+
+
+	H
+
+	Highmem
+	high memory, or memory that is not permanently mapped into kernel memory. Common on 32 bit x86 systems. See HighMemory.
+
+	HPET
+	High Precision Event Timer (HPET) is a replacement timer for the 8254 Programmable Interval Timer and the Real-time clock's (RTC) periodic interrupt function. HPET is a successor to pmtimer, and is far more efficient to read.
+
+	The HPET can produce periodic interrupts at a much higher resolution than the RTC and is often used to synchronize multimedia streams, providing smooth playback and reducing the need to use other timestamp calculations such as an x86 cpu's RDTSC instruction. HPET support in linux requires that the BIOS expose the HPET (via acpi).
+
+	HTB
+	Hierarchical Token Bucket, a qdisc based on TBF and CBQ. HTB Theory
+
+
+	I
+
+	IDT
+
+	Interrupt Descriptor Table, a data structure (x86 arch) for implementing an interrupt vector table.
+
+	IPC
+	Inter-Process Communication, a set of techniques for the exchange of data among multiple threads in one or more processes.
+
+	IPVS
+	IP Virtual Server, the kernel part of the LVS (Linux Virtual Server) project. IPVS redirects incoming client requests to one of several "real" servers, usually for the purpose of load balancing a service.
+
+	ISR
+	Interrupt Service Routine, the function in each device driver that gets called when an interrupt happens.
+
+
+	J
+
+	Jiffies
+	An incrementing counter representing system "uptime" in ticks - or the number of timer interrupts since boot. Ultimately the entire original concept of a jiffy will likely vanish as systems use timer events only when necessary and become "jiffyless".
+
+
+	K
+
+	kswapd
+	a kernel thread that frees up memory by evicting data from caches and paging out userspace memory, part of the virtual memory subsystem.
+
+
+	L
+
+	LBA
+	Logical Block Addressing. A way to address IDE disks without Cylinder/Head/Sector (CHS) coordinates, using linear sector numbers from the start of the disk. Allows for the use of very large IDE disks.
+
+	Linux Device Drivers, 3rd Edition
+	online edition.
+
+	LKM
+	Linux Kernel Module. A (often dynamically loadable at system runtime) kernel extension ("driver") to support, for example, some kind of new hardware device or generic software abstraction.
+
+	LKML
+	Linux Kernel Mailing List. The primary virtual watering hole (meeting ground) for kernel developers to share ideas and bounce opinions off one another during the course of the kernel development process. FAQ at http://www.tux.org/lkml/.
+
+	LSM
+	Linux Security Module. a security framework for providing different security levels.
+
+	LVM
+	Logical Volume Management. A technology for providing an arbitrary logical view of underlying data storage in a fashion supporting resizing and restructuring of storage on the fly. Currently in version 2, originally written by Sistina (now Redhat).
+
+	LXR
+	a cross-reference tool that can be used to navigate the Linux kernel source code, available at lxr.linux.no.
+
+
+	M
+
+	mem_map
+	A contiguous virtual array of struct pages representing the entirety of physical memory pages available within a system.
+
+	MMU
+	Memory Management Unit, part of the CPU hardware that enforces memory boundaries, and throw page faults, upon which the OS builds its coherent protection. The MMU maps virtual memory to actual, where protections allow.
+
+	MUTEX
+	MUTual EXclusion locks. This locking primitive is simpler and semantically tighter than the others, and hence is easier to make faster, and to prove correct. Some constraints are; lock has one owner at a time, the locker, who must also be the unlocker. Read Documentation/mutex-design.txt for much more.
+
+	MSI
+	Message Signaled Interrupts. A PCI mode where the interrupt numbers are extended from 8 bits to 32. These also use the normal pci data lanes not some magic all over the chipset; which means that a device can basically have as many interrupts as it wants rather than 4 (1 in practice) for legacy PCI interrupts, and there are also no interrupt sharing issues, since there are just so many numbers for interrupts... For more, see http://en.wikipedia.org/wiki/Message_Signaled_Interrupts
+
+
+	N
+
+	NAPI
+	NAPI ("New API") is a modification to the device driver packet processing framework, which is designed to improve the performance of high-speed networking. See http://www.linux-foundation.org/en/Net:NAPI.
+
+	Netfilter
+	Netfilter is a framework that provides a set of hooks within the Linux kernel for intercepting and manipulating network packets. See http://en.wikipedia.org/wiki/Netfilter and http://www.netfilter.org.
+
+	netlink
+	Communication protocol between kernel and userspace
+
+
+	O
+
+
+	P
+
+	Page cache
+	a cache of file data and filesystem metadata, dynamically grown an shrunk depending on other memory use.
+
+	Page table
+	data structure used by the MMU to translate virtual memory addresses to physical memory addresses.
+
+	PDA
+	Per Processor Data Area is the x86 implementation of per-cpu memory.
+
+	PFN
+	Page Frame Number, index into the mem_map[] array which describes physical memory pages.
+
+	PGD
+	Page Global Directory, the top level of the page table tree. The page table hierarchy is pgd -> pud -> pmd -> pte.
+
+	PID
+	Process IDentifier (POSIX thread identifier)
+
+	PMD
+	Page Mid-level Directory, note that pmds are folded into pgds on systems with 2 level page tables.
+
+	Process descriptor
+	kernel data structure that describes/accounts process data related to a single process.
+
+	PTE
+	Page Table Entry
+
+	PUD
+	Page Upper Directory, note that puds are folded into pmds, except on systems with 4-levels page tables.
+
+
+	Q
+
+	QDisc
+	Queueing Discipline, queues packets before they are sent out to the network device, enforces QoS requirements, provides traffic shaping and prioritizing capabilities.
+
+	QoS
+	Quality of Service, method to define the importance/priority of network services
+
+
+	R
+
+	RCU
+	Read Copy Update, a mechanism for SMPSynchronisation
+
+	Rlimit
+	resource limit, eg. "maximum amount of virtual memory" or "maximum number of processes". Can be per process or per user.
+
+
+	S
+
+	Semaphore
+	a lock mechanism that works per process context, see SMPSynchronisation
+
+	Scheduler
+	the part of the kernel that chooses a suitable process to run on the cpu, see the schedule() function.
+
+	Shared/Paged Socket Buffer
+	(also: pskb) Socket Buffer with uncontinuous data buffer, used for zero copy, TSO and Scatter/Gather capable network cards.
+
+	Slab cache
+	a fast, SMP scalable kernel memory allocator.
+
+	Socket Buffer
+	(also: skb or sk_buff) data structure used to hold the data and attributes of a network packet. See http://www.linux-foundation.org/en/Net:SK_Buff and http://vger.kernel.org/~davem/skb.html for details.
+
+	SoftIRQ
+	kind of bottom half rarely used.
+
+	Spin lock
+	a simple SMP lock, see SMPSynchronisation
+
+	Swap token
+	a token to temporarily protect a process from pageout, an alternative approach to memory scheduling, thrashing control. See the Token Based Thrashing Control paper by Song Jiang and the Linux-MM wiki.
+
+	System call
+	(also: syscall) the way a program transitions from userspace into kernel space, to call a kernel space function.
+
+	sysenter/sysexit
+	A pair of instructions on Pentium2+ that replace older INT instruction based syscall mechanism. See http://articles.manugarg.com/systemcallinlinux2_6.html
+
+	System.map
+	symbol table used by ksymoops to resolve numbers to function names in Oops. Also used by ps and top for WCHAN field.
+
+
+	T
+
+	TASK_INTERRUPTIBLE
+	State of a task that is sleeping (not on the run queue). The task will sleep until some event occurs that changes its state to TASK_RUNNING. A task in this state can be awakened by signals.
+
+	TASK_RUNNING
+	State of a task that is on the run queue (but not necessarily running).
+
+	TASK_STOPPED
+	State of a task that has stopped and is not ready to run (happens when a task receives SIGSTOP, SIGTSTP, SIGTTIN or SIGTTOU or when any signal is received while the task is being debugged)
+
+	TASK_UNINTERRUPTIBLE
+	State of the task that is sleeping (not on the run queue) and must be explicitly awakened. A task in this state can not be awakened by signals.
+
+	TASK_ZOMBIE
+	State of a task that did called exit() but the parent task didn't call wait4(). The task's descriptor is kept in memory and only released when the parent task calls wait4()
+
+	TBF
+	Token Bucket Filter, a qdisc used for rate limiting
+
+	TGID
+	Task Group IDentifier (POSIX process identifier)
+
+
+	U
+
+	Use-once
+	the page replacement algorithm used by the Linux 2.6 kernel, based on the ideas behind the 2Q page replacement algorithm, also see the AdvancedPageReplacement page.
+
+
+	V
+
+	VDSO
+	Virtual Dynamically-linked Shared Object, a kernel-provided shared library that helps userspace perform a few kernel actions without the overhead of a system call, as well as automatically choosing the most efficient syscall mechanism. Also called the "vsyscall page".
+
+	VFS
+	Virtual File System, an interface through which multiple filesystems can be hooked into the kernel.
+
+	Virtual memory
+	every process in the system gets its own memory address space, independent of the other processes.
+
+	Vsyscall page
+	see VDSO.
+
+
+	W
+
+
+	X
+
+	Xen
+	A paravirtualisation engine for Linux, an efficient way to run multiple Linux OSes on one computer. Also runs BSD, Plan9 and other OSes. (See website for more information.)
+
+	XIP
+	eXecute In Place, the ability to run an executable directly from the filesystem (usually ROM or flash), instead of loading it into memory.
+
+
+	Y
+
+
+	Z
+
+	Zero-Copy
+	A special networking code path where data is sent to the network directly from userspace memory; this avoids unnecessary copying of data and improves performance.

@@ -1,0 +1,30 @@
+1.驱动描述
+  struct device_driver{
+	  const char* name;    /* 驱动程序的名字，体现在sysfs中 */
+	  struct bus_type *bus;  /* 驱动程序所在的总线 */
+	  struct module owner;
+	  const char *mod_name;
+	  int (*probe)(struct device *dev);
+	  int (*remove)(struct device *dev);
+	  void (*shutdown)(struct device *dev);
+	  int (*suspend)(struct device *dev, pm_message_t state);
+	  int (*resume)(struct device *dev);
+	  struct attribute_group **groups;
+	  struct dev_pm_ops *pm;
+	  struct driver_private *p;
+  };
+
+2. 驱动注册/注销
+   注册： int driver_register(struct device_driver *drv);
+   注销： void driver_unregister(struct device_driver *drv);
+
+3. 驱动属性
+   驱动属性使用struct driver_attribute来描述：
+     struct driver_attribute{
+	     struct attribute attr;
+	     ssize_t (*show)(struct device_driver *drv, char *buf);
+	     ssize_t (*store)(struct device_driver *drv, const char *buf, size_t count);
+   创建属性：int driver_create_file(struct device_driver *drv, struct driver_attribute *attr);
+   删除属性：int driver_remove_file(struct device_driver *drv, struct driver_attribute *attr);
+
+

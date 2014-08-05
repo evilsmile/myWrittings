@@ -1,0 +1,287 @@
+一、IIC总线协议
+    IIC（Inter-Intergrated Circuit）总线，是由PHILIPS公司开发的串行总线，用于连接微控制器及其外围设备，特点如下：
+     ＠ 只有两条总线线路：一条串行数据线（SDA）、一条串行时钟线（SCL）
+     ＠ 每个连接到总线的器件都可以使用软件根据它的惟一地址来识别
+     ＠ 传输数据的设备间是简单的主／从关系
+     ＠ 主机可以用作主机发送器或主机接收器
+     ＠ 它是一个真正的多主机总线，两个或多个主机同时发起数据传输时，可以通过冲突检测和仲裁来防止数据被破坏
+     ＠ 串行的8位双向数据传输，位速率在标准模式下可以达到100kbit／s，在快速模式下可达到400kbit／s，在高速模式下可达到3.4Mbit／s
+     ＠ 片上的滤波器可以增加抗干扰功能，保证数据的完整性
+     ＠ 连接到同一总线上的IC数量只受到总线的最大电容400pF的限制
+
+     [IIC总线术语]
+     发送器：发送数据到总线的器件
+     接收器：从总线接收数据的器件
+     主机：发起或停止数据传输，并提供时钟信号的器件
+     从机：被主机寻址的器件
+     多主机：可以有多个主机试图去控制总线，但是不会破坏数据
+     仲裁：当多个主机试图去控制总线时，通过仲裁可以使得只有一个主机能获得总线的控制权，而且它传输的信息不被破坏
+     同步：多个器件同步时钟信号的过程
+
+     [IIC总线的信号类型]
+     IIC总线在传送数据的过程中共涉及3种信号类型：
+     （1）开始信号（S）：SCL为高电平时，SDA由高电平向低电平跳变，开始传送数据
+     （2）结束信号（P）：SCL为低电平时，SDA由低电平向高电平跳变，结束传递数据
+     （3）响应信息（ACK）：接收器在收到8位数据后，在第9个时钟周期，拉低SDA电平
+
+     [IIC总线的数据传输格式]
+     发送到SDA线上的每个字节都必须是8位的，每次传输可以发送的字节数量不受限制。每个字节后必须跟一个响应位。首先传输数据的最高位（MSB）。但是如果从机需要完成其它的一些功能后（如一个内部中断服务程序）才能继续接收／发送下一个字节，则从机可以拉低SCL迫使主机进入等待状态；当人机准备好接收下一个数据并把SCL释放后，数据传输则继续。而如果主机在传输数据期间也需要完成一些其它的功能（如内部中断服务程序）时，也可以拉低SCL以占住总线。
+     启动一个传输时，主机先发出S信号，然后发出8位数据。这8位数据中前7位为从机的地址，第8位代表传输的方向（0：写，1：读）。被选中的从机发出响应信号。然后传输一系列字节及其响应位。最后，主机发出P信号结束本次传输。
+     并非每传输8位数据后都能得到ACK信号，以下3种例外：
+     （1）当从机不能响应从机地址时（如忙于其他事而无法响应IIC总线的操作，或者这个地址没有相应的从机），在第9个SCL周期内SDA线没有被拉低，即没有ACK信号。这时，主机发出一个P信号终止传输，或者重新发出一个S信号开始新传输。
+     （2）如果从机接收器在传输过程中不能接收更多的数据时，它也不会发出ACK信号。主机处理同上。
+     （3）主机接收器在接收到最后一个字节后，也不会发出ACK信号。于是，从机发送器释放SDA线，以允许主机发出P信号结束传输。
+
+二、S3C2410／S3C2440 IIC 总线控制器
+    1. S3C2410／S3C2440 IIC总线控制器的寄存器介绍
+       上述芯片的IIC接口有4种工作模式：主机发送器、主机接收器、从机发送器、从机接收器。它们提供了4个寄存器来完成所有的IIC操作：SDA数据线上的数据从IICDS寄存器发出，或传入IICDS寄存器，IICADD寄存器中保存S3C2410／S3C2440当作从机时的地址；IICCON、IICSTAT两个寄存器则用来控制或标识各种状态，比如选择工作模式，发出S、P信号，决定是否发出ACK信号，检测是否收到ACK信号。
+       （1）IICCON寄存器（Multi－Master IIC－bus control）
+       IICCON寄存器用于控制是否发出ACK信号、设置发送的时钟、开启IIC中断、并标识中断是否发生。包含如下位：ACK信号使能（在接收模式时将SDA线在响应范围内拉低，发出ACK）、发送模式时钟源选择（PCLK／16？PCLK／512？）、发送／接收中断使能（Tx/Rx中断使能？）、中断标记（中断发生了？）、发送模式时钟分频系数。
+       注意：
+       (a. 发送模式的时钟频率由位6、位3：0联合决定。另外当IICCON[6]=0时，IICCON[3:0]不能取0或1.
+       (b. IIC中断在以下情况下发生：当发出地址信息或接收到一个从机地址并且吻合时；当总线仲裁失败时；当发送／接收完一个字节的数据（包括响应位）时。
+       (c. 基于SDA、SCL线上时间特性的考虑，要发送数据时，先将数据写入IICDS寄存器，然后再清除中断
+       (d. 如果IICCON[5]=0,IICCON[4]将不能正常工作。所以，即使不使用IIC中断，也要将IICCON[5]设为1.
+
+	（2）IICSTAT寄存器（Multi－Master IIC－bus control／status）
+	IICSTAT寄存器用于选择IIC接口的工作模式，发出S信号、P信号，使能接收／发送功能，并标识各种状态，如总线仲裁是否成功、作为人机时是否被寻址、是否接收到0地址、是否接收到ACK信号等，包括如下位：
+	工作模式（[7:6]主／从 接收／发送 器？），忙状态位／S信号、P信号（[5]读此位时：0为总线空闲，1为总线忙，写此位时：0发出P信号，1发出S信号<IICDS寄存器中的数据将被自动发送>），串行输出使能位（[4]开启接收／发送功能？），仲裁状态（[3]仲裁成功？），从机地址状态（[2]作为从机时，在检测到S／P信号时此位被自动清0；接收到的地址与IICADD寄存器中的值相等时，此位被置为1），0地址状态（[1]在检测到S／P信号时此位被自动清0；接收到的地址为0b0000000时，此位被置1），最后一位状态（[0]接收到的最后一位为0（接收到ACK）？1（没有接收到ACK））。
+
+	（3）IICADD寄存器（Multi－Master IIC－bus address）
+	 用到IICADD寄存器的位[7:1]，表示从机地址。IICADD寄存器在串行输出使能位IICSTAT[4]为0时，才可以写入；在任何时间都可以读出。
+
+	（4）IICDS寄存器（Multi－Master IIC－bus Tx／Rx data shift）
+	 用于IICDS寄存器的位[7:0]，其中保存的是要发送的数据或已经接收的数据。IICDS寄存器在串行输出使能位IICSTAT[4]为1时，才可以写入；任何时间可以读出。
+
+
+     2. S3C2410／S3C2440 IIC总线操作方法
+      启动或恢复S3C2410／S3C2440的IIC传输有以下各种方法：
+      （1）当IICCON[4]即中断状态位为0时，通过写IICSTAT寄存器启动IIC操作。有以下两种情况：
+       (a. 在主机模式下，令IICSTAT[5:4]等于0b11，将发出S信号和IICDS寄存器的数据（寻址），令IICSTAT[5:4]等于0b01，将发出P信号。
+       (b. 在从机模式下，令IICSTAT[4]等于1将等待其他主机发出S信号及地址信息。
+      （2）当IICCON[4]即中断状态位为1时，表示IIC操作被暂停。在这期间设置好其他寄存器之后，向IICCON[4]写入0即可恢复IIC操作。所谓“设置其他寄存器”，有以下3种情况：
+       (a. 对于主机模式，可以按照上面(a.的方法写IICSTAT寄存器，恢复IIC操作后即可发出S信号和IICDS寄存器的值（寻址），或发出P信号。
+       (b. 对于发送器，可以将下一个要发送的数据写入IICDS寄存器，恢复IIC操作后即可发出这个数据。
+       (c. 对于接收器，可以从IICDS寄存器中读出接收到的数据。最后向IICCON[4]写入0的同时，设置IICCON[7]以决定在接收到下一个数据后是否发出ACK信号。
+
+
+	通过中断服务程序来驱动IIC传输：
+	（1）当仲裁失败时发生中断－－本次中断没有抢到总线，可以稍后继续。
+	（2）对于主机模式，当发出S信号、地址信息并经过一个SCL周期（对应ACK信号）后，发生中断－－主机在此时判断是否成功寻址到从机。
+	（3）对于从机模式，当接收到的地址与IICADD寄存器吻合时，先发出ACK信号，然后发生中断－－从机可以此时准备后续的传输。
+	（4）对于发送器，当发送完一个数据并经过一个SCL周期（对应ACK信号）后，发生中断。这时可以准备下一个要发送的数据，或发出P信号以停止传输。
+	（5）对于接收器，当接收到一个数据时，先根据IICCON[7]决定是否发出ACK信号后，然后发生中断。这时可以读取IICDS寄存器得到数据，并设置IICCON[7]决定接收到下一个数据后是否发出ACK信号。
+
+
+	现在以主机发送器的工作模式作为例子说明IIC的工作流程：
+	（1）配置主机发送器的各类参数
+	 设置GPE15、GPE14引脚用于SDA、SCL，设置IICCON寄存器选择IIC发送时钟，最后，设置IICSTAT[4]为1，这样，后面才能写IICDS
+	 （2）将要寻址的从机地址写入IICDS寄存器
+	 （3）将0xF0写入IICSTAT寄存器，即设为主机发送器、使能串行输出功能、发出S信号
+	 （4）发出S信号后，步骤（2）中设置的IICDS寄存器值也将被发出，用来寻址从机
+	 （5）在响应周期后发生中断，此时IICCON[4]为1，IIC传输暂停
+	 （6）如果没有数据要发送，则跳到步骤（1）；否则到步骤（7）
+	 （7）将下一个要发送的数据写入IICDS寄存器
+	 （8）往IICCON[4]中写入0，恢复IIC传输
+         （9）这时IICDS寄存器中的值被一位一位地发送出去。当8位数据发送完毕，再经过另一个SCL周期（对应ACK信号）后，中断再次发生，跳到步骤（5）
+	 （10）将0xF0写入IICSTAT寄存器，即：设为主机发送器、使能串行输出功能、发出P信号
+	 （11）清除IICCON[4]，P信号得以发出
+	 （12）等待一段时间，使得P信号完全发出。
+
+
+三、IIC总线操作实例
+    本开发板中，通过IIC总线连接RTC芯片M41t11，它使用电池供电，系统断电时也可以维持日期和时间。S3C2410／S3C2440作为IIC主机向M41t11发送数据以设置日期和时间、读取M41t11以获得日期和时间。
+    先介绍一下M41t11.它有8个寄存器，分别对应秒、分、时、天（星期几）、日、月、年、控制寄存器，其中的数据都是以BCD格式保存，如下所示：
+    地址		数     据			功能／取值范围
+     		D7   D6    D5    D4    D3 D2 D1 D0
+    0           ST   秒 的 十 位 数    秒的个位数        秒       00~59
+    1           X    分 的 十 位 数    分的个位数        分       00~59
+    2           CEB  CB    时的十位数  时的个位数       世纪位/时 0~1/00~23
+    3           X    X     X     X     X  天（星期几）   天       01~07
+    4           X    X     日的十位数  日的个位数        日       01~31
+    5           X    X     X    10月   月的个位数        月       01~12
+    6           年   的  十  位  数    年的个位数        年       00~99
+    7           OUT  FT    S    |校             准|      控制
+    (ST为停止位，写入1时M41t11停止工作，写入0时开始工作。)
+    (CEB为世纪使能位，为1时每过100年，CB位就反转一次)
+    (10月表示月的十位数)
+    (地址为7的寄存器有一些控制功能)
+    除了上表中的8个寄存器（地址0～7）外，M41t11内部还有56字节的RAM（地址为8～63）。访问M41t11前，先设置寄存器地址，以后每次读写操作完成后，M41t11内部会自动将寄存器地址加1.
+    所以读写M41t11分为以下两个步骤：
+    （1）主机向M41t11发出要操作的寄存器起始地址（0～7）
+    （2）要设置M41t11时，主机连续发出数据；要读取M41t11时，主机连续读取数据
+    M41t11的IIC从机地址为0XD0。
+
+
+    下面介绍实例实现。实例将在串口上输出一个菜单，可以选择设置时间和日期，或者将它们读出来，以验证IIC主机的发送、接收操作。
+    i2c.c封装了S3C2410／S3C2440作为主机发送器、主机接收器的4个操作函数：i2c_init用于初始化，i2c_write用于发起发送数据，i2c_read用于发起读取数据，I2CIntHandle是IIC中断服务程序，它用于完成后续的数据传输。
+    1.S3C2440 IIC控制器初始化
+     
+     void i2c_init(void)
+     {
+	     GPEUP |= 0xc000;    //禁止内部上拉
+	     GPECON |= 0xa0000000;   //选择功能引脚，GPE15：IICSDA，GPE14：IICSCL
+	     //开启IIC中断
+	     INTMSK &= ~(BIT_IIC);
+
+	     //bit[6]=0(IICCLK=PCLK/16), bit[5]=1(使能中断),bit[3:0]=0xf(tx clock = IICCLK/16)
+	     IICCON = (1 << 7) | (0 << 6) | (1 << 5) | (0xf); //0xaf
+
+	     //作为IIC从机时的地址
+	     IICADD = 0x10;      //S3C24xx slave address = [7:1]
+	     IICSTAT = 0x10;     //IIC串行输出使能(Rx/Tx)
+     }
+
+    2. S3C2410/S3C2440 IIC主机发送函数
+    初始化完成后，就可以调用i2c_read、i2c_write读写IIC从机了。它们的使用方法从输出名称可以看出。这两个函数仅仅是启动IIC传输，然后进入等待，直到数据在中断服务程序中传输完毕再返回。
+    
+    void i2c_write(unsigned int slvAddr, unsigned char *buf, int len)
+    {
+	    //全局变量，表明当前是写操作，并保存缓冲区地址、要传送数据的长度，将缓冲区索引值初始化为0
+	    g_tS3C24xx_I2C.Mode = WRDATA;   //write operation
+	    g_tS3C24xx_I2C.Pt = 0;     // index to be 0
+	    g_tS3C24xx_I2C.pData = buf;  //buffer address
+	    g_tS3C24xx_I2C.DataCount = len;  //length to be transfered
+
+	    //写入从机地址
+	    IICDS = slvAddr;
+	    //设为主机发送器，并发出S信号
+	    IICSTAT = 0xf;              //start tranferation
+
+	    //等待，直到传输完成
+	    while(g_tS3C24xx_I2C.DataCount != -1);
+    }
+
+    3. S3C2410/S3C2440 IIC主机接收函数
+      void i2c_read(unsigned int slvAddr, unsigned char *buf, int len)
+      {
+	      g_tS3C24xx_I2C.Mode = RDDATA;
+	      //设为-1，在中断处理函数中会根据这个值决定是否从IICDS寄存器中读取数据。读操作时，第1次中断发生时表示发出了地址，这时候还不能读取数据
+	      g_tS3C24xx_I2C.Pt = -1;
+	      g_tS3C24xx_I2C.pData = buf;
+	      g_tS3C24xx_I2C.DataCount = len;
+
+	      IICDS = slvAddr;
+	      IICSTAT = 0xb0; 
+
+	      while(g_tS3C24xx_I2C.DataCount != -1);
+      }
+
+    4. S3C2410/S3C2440 IIC中断服务程序
+     IIC操作的主体在中断服务程序，它分为3部分：首先在SRCPND、INTPND中清除中断，后面两部分分别对应写操作、读操作。
+
+     	void I2CIntHandle(void)
+	{
+		unsigned int iicSt, i;
+
+		//清除中断
+		SRCPND = BIT_IIC;
+		INTPND = BIT_IIC;
+
+		iicSt = IICSTAT;
+
+		//仲裁失败
+		if(iicSt & 0x08){
+			printf("Bus arbitration failed\n\r");
+		}
+
+
+		switch(g_tS3C24xx_I2C.Mode){
+		case WRDATA:
+		{
+			//DataCount表示剩余等待传输的数据个数
+			if((g_tS3C24xx_I2C.DataCount--) == 0){
+				IICSTAT == 0xd0;
+				IICCON = 0xaf;
+				Delay(10000);//等待一段时间以让P信号发出
+				break;
+			}
+			IICDS = g_tS3C24xx_I2C.pData[g_tS3C24xx_I2C.Pt++];
+
+			//将数据写入IICDS后，需要一段时间才能出现在SDA线上
+			for(i = 0; i < 10; i++);
+
+			IICCON = 0xaf;  //恢复IIC传输
+			break;
+		}
+
+		case RDDATA:
+		{
+			//第1次中断发生时表示发出了地址，这时还不能读取数据
+			if(g_tS3C24xx_I2C.Pt == -1){
+				g_tS3C24xx_I2C.Pt = 0;
+				if(g_tS3C24xx_I2C.DataCount == 1)
+					IICCON = 0x2f; //恢复IIC传输，开始接收数据，接收数据时不发出ACK
+				else
+					IICCON = 0xaf; //恢复IIC传输，开始接收数据
+				break;
+			}
+
+			//判断数据是否已经全部接收完毕
+			if((g_tS3C24xx_I2C.DataCount--) == 0){
+				g_tS3C24xx_I2C.pData[g_tS3C24xx_I2C.Pt++] = IICDS;
+				//恢复IIC操作，发出P信号
+				IICSTAT = 0x90;
+				IICCON = 0xaf;
+				Delay(10000);
+				break;
+			}
+
+			g_tS3C24xx_I2C.pData[g_tS3C24xx_I2C.Pt++] == IICDS;
+
+			//接收到最后一个数据时，不要发出ACK信号
+			if(g_tS3C24xx_I2C.DataCount == 0)
+				IICCON = 0x2f;  //恢复IIC传输，接收到下一数据时无ACK
+			else
+				IICCON = 0xaf; //恢复IIC传输，接收到下一数据时发出ACK
+			break;
+		}
+
+
+
+    5. RTC芯片M41t11特性相关的操作
+      M41t11.c文件中提供了两个函数m41t11_set_datetime、m41t11_get_datetime，分别用来设置和读取日期与时间。它们都通过i2c_read或i2c_write函数来完成与M41t11的交互。
+      int m41t11_set_datetime(struct rtc_time *dt)
+      {
+	      unsigned char leap_yr;
+	      struct {
+		      unsigned char addr;
+		      struct rtc_registers rtc;
+	      }__attribute__((packed))addr_and_regs;
+	      ... ... /*设置rtc结构，即根据传入的参数构造各寄存器的值 */
+              i2c_write(0xD0, (unsigned char*)&addr_and_regs, sizeof(addr_and_regs));
+
+	      return 0;
+      }
+     
+      addr_and_regs结构中的rtc表示M41t11的8个寄存器－－秒、分、时、天等。
+    
+      int m41t11_get_datetime(struct rtc_time *dt)
+      {
+	      unsigned char addr[1] = { 0 };
+	      struct rtc_registers rtc;
+
+	      memset(&rtc, 0, sizeof(rtc));
+	      i2c_write(0xD0, addr, 1);
+	      i2c_read(0xD0, (unsigned char*)&rtc, sizeof(rtc));
+	      .. ... /* 根据读出的各寄存器的值，设置dr结构 */
+	      return 0;
+      }
+
+
+    6. 连接脚本
+	     i2c.lds:
+	     SECTIONS{
+		     . = 0x00000000;
+		     .init : AT(0){ head.o init.o nand.o }
+		     . = 0x30000000;
+		     .text : AT(4096){ *(.text) }
+		     .rodata ALIGN(4) : AT((LOADADDR(.text)+SIZEOF(.text)+3)&(~(0x3)){ *(.rodata*))}
+		     .data ALIGN(4) : AT((LOADADDR(.rodata)+SIZEOF(.rodata)+3)&(~(0x03)){*(.data))}
+		     __bss_start = .;
+		     .bss ALIGN(4) : { *(.bss) *(COMMON) }
+		     __bss_end = .;
+	     }
+    	head.S、init.c和nand.c对应的代码运行地址设为0，加载地址设为0.从NAND Flash启动时，这些代码被复制到Steppingstone后就可以直接运行。
+        设置其余代码的运行地址为0x3000000；代码段的加载地址设为4096，表示代码段将存在NAND Flash地址4096处。
+	AT(...)设置rodata段、data段的加载地址依次位于代码段之后中。“LOADADDR(...）”表示某段的加载地址，SIZEOF（...）表示它的大小。这两行的前面使用ALIGN（4）使得它们的运行地址为4字节对应，为了使各段之间加载地址的相对偏移值等于运行地址的相对偏移值，需要将AT（...）中的值也设为4字节对齐：先加上3，然后与~(0x03)进行与操作，将低两位设为0.

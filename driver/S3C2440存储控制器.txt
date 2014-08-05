@@ -1,0 +1,124 @@
+一、 使用存储控制器访问外设的原理
+    S3C2410/S3C2440的存储控制器提供了访问外部设备所需的信号，有如下特性：
+     + 支持小字节序、大字节序（通过软件选择）
+     + 每个BANK的地址空间为128MB，总共1GB（8 BANKs）
+     + 可编程控制的总线位宽（8/16/32-bit），不过BANK0只能选择16/32-bit位宽
+     + 总共8个BANK， BANK0～BANK5可把支持外接ROM、SRAM等，BANK6～BANK7除可把持ROM、SRAM外，还支持SDRAM等
+     + BANK0～BANK6共7个BANK的起始地址是固定的
+     + BANK7的起始地址可编程选择
+     + BANK6、BANK7的地址空间大小是可编程控制的
+     + 每个BANK的访问周期均可编程控制
+     + 可以通过外部的"wait"信号延长总线的访问周期
+     + 在外接SDRAM时，支持自刷新（self-refresh）和省电模式(power down mode)
+   S3C2410/S3C2440对外引出的27根地址线ADDR0～ADDR26的访问范围只有128M。那么如何达到上面据说的1GB的访问空间呢？CPU对外还引出了8根片选信号nGCS0~nGCS7，对应于BANK0～BANK7，当访问BANKx的地址空间时，nGCSx引脚输出低电平用来选中外接的设备。这样，8个nGCSx信号加起来就对应了1GB的地址空间。
+   S3C2410/S3C2440作为32位的CPU，可以使用的地址范围理论上达到4GB，除去上述用于连接外设的1GB地址空间外，还有一部分是CPU内部寄存器地址，剩下的地址空间没有使用。
+   BANK0～BANK5的连接方式都是相似的，BANK6连接SDRAM时复杂一点，CPU提供了一组用于SDRAM的信号：
+      + SDRAM时钟有效信号SKE
+      + SDRAM时钟信号SCLK0/SCLK1
+      + 数据掩码信号DQM0/DQM1/DQM2/DQM3
+      + SDRAM片选信号nSCS0（它与nGCS6是同一个引脚的两个功能）
+      + SDRAM行地址选通脉冲信号nSRAS
+      + SDRAM列地址选通脉冲信号nSCAS
+      + 写允许信号nWE（它不是专用于SDRAM的）
+   SDRAM的内部是一个存储阵列，阵列就如同表格一样，将数据填进去。指定行和列可找到所需存储单元，这个存储阵列就是逻辑Bank(L-Bank)。SDRAM一般含有4个L-Bank。可以想象，对SDRAM的访问分为如下4个步骤：
+         (1. CPU发出的片选信号nSCS0有效，它选中SDRAM芯片
+	 (2. SDRAM中有4个L-Bank，需要两根地址信号来选中其中一个，如ADDR24、ADDR25作为L-Bank的选择信号
+	 (3. 对被选中的芯片进行统一的行/列（存储单元）寻址
+    根据SDRAM芯片的列地址线数目设置CPU的相关寄存器后，CPU就会从32位的地址中自动分出L-Bank选择信号、行地址信号、列地址信号，然后先后发出行地址信号、列地址信号。L-Bank选择信号在发出行地址信号的同时发出，并维持到列地址信号结束。在本开发板中，使用ADDR24、ADDR25作为L-Bank的选择信号；SDRAM芯片K4S561632的行地址数为13，列地址数为9，所以当nSRAS信号有效时，ADDR2～ADDR14上发出的行地址信号，对应32位地址空间的bit[23:11]；当nSCAS信号有效时，ADDR2～ADDR10上发出的是列地址信号，它对应32位地址空间的bit[10:2]；ADDR0、ADDR1恒为1，不参与译码。
+         (4. 找到了存储单元后，被选中的芯片就要进行统一的数据传输了。开发板中使用两片16位的SDRAM芯片并联组成32位的位宽，与CPU的32根数据线（DATA0～DATA31）相连。BANK6的起始地址为0x30000000，所以SDRAM的访问地址为0x30000000~0x33FFFFFF，共64M。
+
+
+   存储控制器共有13个寄存器，BANK0～BANK5只需要设置BWSCON和BANKCONx(x为0～5）两个寄存器；BANK6、BANK7外接SDRAM时，队BWSCON和BANKCONx(x为6、7)外，还要设置REFRESH、BANKSIZE、MRSRB6、MRSRB7等4个寄存器。
+   1. 位宽和等待控制寄存器BWSCON（BUS WIDTH＆WAIT CONTROL REGISTER）
+      BWSCON中每4位控制一个BANK，最高4位对应BANK7、接下来对应BANK6，依此类推。这4位分别是STx、WSx、DWx（两位）（具体可参考S3C2440的手册）。比较特殊的是BANK0，它没有ST0和WS0，DW0只读，由硬件跳线决定，01表示16位，10表示32位，BANK0只支持16、32位两种位宽。
+   2. BANKCONx
+      在8个BANK中，只有BANK6和BANK7可以外接SRAM或SDRAM，所以BANKCON6～BANCON7与BANKCON0～BANKCON5有点不同，具体可参考手册。
+   3. 刷新控制寄存器REFRESH
+      注意refresh counter([10:0])的计算，参考手册。
+   4. BANKSIZE寄存器REFRESH
+      其中需要设置BK76MAP[2:0]用于设置BANK6/7的大小。因为BANK0～BANK5的地址空间大小都是固定的128M，地址范围是（x*128M)到(x+1)*128M-1,x表示0～5。BANK6/7的大小是可变的，以保持这两个空间的地址连续，即BANK7的起始地址会随它们的大小变化。BK76MAP取001时代表64M/64M，表示BANK6/7的容量都是64M。
+   5. SDRAM模式设置寄存器MRSRBx（SDRAM MODE REGISTER SET REGISTER，x为6、7）
+      能修改的只有位CL[6:4]，这是SDRAM时序的一个时间参数。
+
+
+二、存储控制器操作实例：使用SDRAM
+   从NAND Flash启动CPU时，CPU会通过内部的硬件将NAND Flash开始的4KB数据复制到称为“Steppingstone”的4KB的内部RAM中（起始地址为0），然后跳转到地址0开始执行。
+  本实例先使用汇编语言设置好存储控制器，使外接的SDRAM可用，然后把程序本身从Steppingstone复制到SDRAM处，最后跳转到SDRAM中执行。
+
+   head.S代码如下：
+      @******************************************************************
+      @ File: head.S
+      @ 功能: 设置SDRAM，将程序复制到SDRAM，然后跳转到SDRAM继续执行
+      @******************************************************************
+       
+      .equ MEM_CTRL_BASE 0x48000000
+      .equ SDRAM_BASE    0x30000000
+
+      .text
+      .global _start
+      _start:
+             bl disable_watch_dog
+	     bl memsetup
+	     bl copy_steppingstone_to_sdram
+	     ldr pc, =on_sdram
+      on_sdram:
+             ldr sp, =0x34000000
+	     bl main
+      halt_loop:
+             b halt_loop
+
+      disable_watch_dog:
+             @往WATCHDOG寄存器写0即可
+	     mov r1, #0x53000000
+	     mov r2, #0x0
+	     str r2, [r1]
+	     mov pc, lr      @ 返回
+    
+      copy_steppingstone_to_sdram:
+            @将Steppingstone的4KB数据全部复制到SDRAM中去
+            @Steppingstone起始地址为0x00000000，SDRAM中起始地址为0x30000000
+
+	    mov r1, #0
+	    ldr r2, =SDRAM_BASE
+	    mov r3, #4 * 1024
+     1:
+     	    ldr r4, [r1], #4  @从Steppingstone读取4字节的数据，并让源地址加4
+	    str r4, [r2], #4  @将此4字节的数据复制到SDRAM中，并让目的地址加4
+	    cmp r1, r3        @判断是否完成
+	    bne 1b
+	    mov pc, lr        @返回
+
+     memsetup:
+           @设置存储控制器以便使用SDRAM等外设
+
+	   mov r1, #MEM_CTRL_BASE   @存储控制器的13个寄存器的开始地址
+	   adrl r2, mem_cfg_val     @这13个值的起始存储地址
+	   add r3, r1, #52          @13*4=52
+     1:
+           ldr r4, [r2], #4         @读取该设置值，并让r2加4
+	   str r4, [r1], #4         @将此值写入寄存器，并让r1加4
+	   cmp r1, r3                 
+	   bne 1b
+	   mov pc, lr
+
+    .align 4
+    mem_cfg_val:
+          @存储控制器13个寄存器的设置值
+
+	  .long 0x22011110   @BWSCON
+	  .long 0x00000700   @BANKCON0
+	  .long 0x00000700   @BANKCON1
+	  .long 0x00000700   @BANKCON2
+	  .long 0x00000700   @BANKCON3
+	  .long 0x00000700   @BANKCON4
+	  .long 0x00000700   @BANKCON5
+	  .long 0x00018005   @BANKCON6
+	  .long 0x00018005   @BANKCON7
+	  .long 0x008C07A3   @REFRESH
+	  .long 0x000000B1   @BANKSIZE
+	  .long 0x00000030   @MRSRB6
+	  .long 0x00000030   @MRSRB7
+
+    程序首先禁止WATCHDOG，否则WATCHDOG会不断重启系统。
+    程序是如何从Steppingstone跳转到SDRAM中去执行的呢？
+    这是通过“ldr pc,=on_sdram”指令来完成的。程序标号“on_sdram”这个地址值在连接程序时被确定为0x30000010（这是SDRAM的地址），执行"ldr pc,=on_sdram"后，程序一下就跳到SDRAM中去了。在Makefile中做链接时执行"arm-linux-ld -Ttext 0x3000000 ..."，然后每条指令地址增加4，到on_sdram时即为0x3000010。

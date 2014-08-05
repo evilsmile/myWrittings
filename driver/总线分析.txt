@@ -1,0 +1,35 @@
+相比linux2.4, linux2.6内核提供了全新的内核设备模型，其中包括：
+   总线，驱动，设备。
+
+1. 总线：
+   总线是处理器和设备之间的通道，在设备模型中，所有的设备都通过总线相连，甚至是内部的虚拟"platform"总线，在Linux设备模型中，总线由bus_type结构表示，定义在<linux/device.h>。
+    struct bus_type{
+	    const char* name;
+	    struct bus_attribute *bus_attrs;
+	    struct device_attribute *dev_attrs;
+	    struct driver_attribute *drv_attrs;
+	    int (*match)(struct device *dev, struct device_driver *drv);
+	    int (*uevent)(struct device *dev, struct kobject_uevent_env *env);
+	    int (*probe)(struct device *dev);
+	    int (*remove)(struct device *dev);
+	    void (*shutdown)(struct device *dev);
+	    void (*suspend)(struct device *dev, pm_message_t state);
+	    void (*suspend_late)(struct device *dev, pm_message_t state);
+	    void (*resume_early)(struct device *dev);
+	    void (*resume)(struct device *dev);
+	    struct dev_pm_ops *pm;
+	    struct bus_type_private *p;
+    };
+    
+   总线的注册使用bus_register(struct bus_type *bus);，或成功，新的总线将被添加进系统，并可在sysfs的/sys/bus下看到。
+   而总线的删除使用void bus_unregister(struct bus_type *bus);
+
+   在bus_type结构体中，match函数在一个新的设备或驱动添加到这个总线时，该方法被调用，用于判断指定的驱动程序是否能处理指定的设备。若可以，则返回非零值。
+   而uevent函数在为用户空间产生热插拔事件之前调用，允许总线添加环境变量。
+   
+   总线属性由结构bus_attribute描述，定义如下：
+     struct bus_attribute{
+	     struct attribute attr;
+	     ssize_t (*show)(struct bus_type *, char *buf);
+	     ssize_t (*store)(struct bus_type *, const char *buf, size_t count);
+     创建属性由int bus_create_file(struct bus_type *bus, struct bus_attribute *attr);完成，删除属性由void bus_remove_file(struct bus_type *bus, struct bus_attribute *attr);完成。

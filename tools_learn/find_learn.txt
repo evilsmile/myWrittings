@@ -1,0 +1,4 @@
+1. 查找11点12分钟到12点20的文件
+   touch -t 04241112 startstamp #4月24号11点12
+   touch -t 04241220 endstamp #4月24号12点20
+   find -newer startstamp -a ! -newer endstamp -exec ls -l {} \;

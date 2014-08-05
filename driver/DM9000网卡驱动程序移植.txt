@@ -1,0 +1,209 @@
+一、DM9000网卡特性
+   DM9000是一款高度集成的、低成本的单片快速以太网MAC控制器，含有带有通用处理器接口、10M/100M物理层和16kB的SRAM。
+   DM9000有如下特点：
+      * 支持的处理器接口类型：以字节/字/双字的IO指令访问DM9000内部数据
+      * 集成的10M/100M收发器
+      * 支持MII/RMII接口
+      * 支持半双工背压流量控制模式
+      * IEEE802.3x全双工流量控制模式
+      * 支持远端唤醒和连接状态的变化
+      * 支持4个GPIO管脚
+      * 可以使用EEPROM来配置
+      * 低功耗模式
+      * IO管脚3.3V和5V兼容
+      * 100-pin CMOD工艺LQFP封装
+
+二、DM9000网卡驱动程序修改
+   首先确定以下几点：
+   （1）DM9000的访问基址为0x20000000（BANK4的基址），这是物理地址
+   （2）只用到一条地址线：ADDR2.这是由DM9000的特性决定的：DM9000的地址信号和数据信号复用，使用CMD引脚来区分它们（CMD为低时数据总线上传输的是地址信号，为高时传输的数据信号）。访问DM9000内部寄存器时，需要先将CMD置为低电平，发出地址信号；然后将CMD置为高电平，读写数据。
+   （3）总线位宽为16， 用到nWAIT信号。
+   （4）中断引脚为EINT7.
+   Linux内核中已经有DM9000网卡驱动程序，源文件为drivers/net/dm9000.c。它既可以编进内核，也可以编译为一个模块。入口函数都是dm9000_init,主要完成的功能是向内核注册平台驱动dm9000_driver。dm9000_driver结构的名称为“dm9000“，如果内核中有相同名称的平台设备，则调用dm9000_probe函数。dm9000_driver结构如下:
+           static struct platform_driver dm9000_driver = {
+		   .driver = {
+			   .name = "dm9000",
+			   .owner = THIS_MODULE,
+		   },
+		   .probe = dm9000_probe,
+		   .remove ...,
+	   };
+   所以首先要为DM9000定义一个平台设备的数据结构，然后修改drivers/net/dm9000.c，增加一些开发板相关的代码。
+   1. 增加DM9000平台设备
+   需要修改arch/arm/plat-s3c24xx/common-smdk.c文件。
+   （1）添加要包含的头文件：
+#if defined(CONFIG_DM9000) || defined(CONFIG_DM9000_MODULE)
+#include <linux/dm9000.h>
+#endif
+   （2）添加DM9000的平台设备结构：
+#if defined(CONFIG_DM9000) || defined(CONFIG_DM9000_MODULE)
+static  struct resource s3c_dm9k_resource[] = {
+	[0] = {
+		.start = S3C2410_CS4, /* ADDR2 = 0, 发送地址时使用这个地址 */
+		.end = S3C2410_CS4 + 3,
+		.flag = IORESOURCE_MEM,
+	},
+	[1] = {
+		.start = S3C2410_CS4 + 4, /* ADDR2 = 1, 传输数据时使用这个地址 */
+		.end = S3C2410_CS4 + 4 + 3,
+		.flag = IORESOURCE_MEM,
+	},
+	[2] = {
+		.start = IRQ_EINT7,  /* 中断号 */
+		.end = IRQ_EINT7,
+		.flag = IORESOURCE_IRQ,
+	}
+};
+
+static struct dm9000_plat_data s3c_dm9000_platdata = {
+	.flags = DM9000_PLAT_16BITONLY, /* 数据总线宽度为16 */
+};
+
+static struct platform_device s3c_device_dm9k = {
+	.name = "dm9000",
+	.id = 0,
+	.num_resources = ARRAY_SIZE(s3c_dm9000_resource),
+	.resource = s3c_dm9k_resource,
+	.dev = {
+		.platform_date = &s3c_dm9000_platdata,
+	},
+};
+#endif
+    s3c_dm9k_resource结构中定义了3个资源：
+       两个内存空间、中断号。数组项0、1定义了访问DM9000时使用的地址，前一个地址的ADDR2为0，用来传输地址；后一个地址的ADDR2为1，用来传输数据。数组项2定义了DM9000使用的中断号。
+    在s3c_dm9000_platdata则指定了访问DM9000时的数据位宽为16.
+
+    （3）加入内核设备列表中。
+    把平台设备s3c_device_dm9k加入smdk_devs数组中即可，系统启动时会把这个数组中的设备注册进内核中。在mini2440中，在arch/arm/mach-s3c2440/mach-mini2440.c文件中定义了mini2440平台及相关的设备。
+     static struct platform_device *mini2440_devices[] __initdata = {
+	             &s3c_device_usb,
+	             &s3c_device_rtc,
+	             &s3c_device_lcd,
+	             &s3c_device_wdt,
+	             &s3c_device_i2c0,
+	             &s3c_device_iis,
+	             &mini2440_device_eth, //添加的dm9000设备
+	             &s3c24xx_uda134x,
+	             &s3c_device_nand,
+	             &s3c_device_sdi,
+	             &s3c_device_usbgadget,
+	     };
+  2. 修改drivers/net/dm9000.c
+     对DM9000的枚举最终由dm9000_probe函数来完成，首先分析它是如何使用上面定义的两个内存空间地址和中断号的，然后给出修改方法：
+   （1）驱动源码简要分析
+          static int dm9000_probe(struct platform_device *pdev)
+	  {
+		  ...;
+		  if(pdev->num_resources < 2){
+			  ...;
+		  }else if(pdev->num_resources == 2){
+			  ...;
+		  }else{
+			  db->addr_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+			  db->data_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+			  db->irq_res = platform_get_resource(pdev, IORESOURCE_IRQ, 2);
+			  ...;
+			  i = res_size(db->addr_res);
+			  //地址空间的虚拟地址
+			  db->io_addr = ioremap(db->addr_res->start, i);
+			  iosize = res_size(db->data_res);
+			  ...;
+			  //数据空间的虚拟地址
+			  db->io_data = ioremap(db->data_res->start, iosize);
+			  ...;
+			  ndev->base_addr = (unsigned long)db->io_addr;
+			  ndev->irq = db->irq_res->start;
+			  ...;
+		  }
+		  if(pdata != null){
+			  if(pdata->flags & DM9000_PLATF_16BITONLY)
+				  dm9000_set_io(db, 2);
+		  }
+
+		  dm9000_reset(db);
+
+		  /* try 2 times, DM9000 sometimes gets the first read wrong */
+		  for(i = 0; i < 2; i++){
+			  id_val = ior(db, DM9000_VIDL);
+			  id_val |= (u32)ior(db, DM9000_VIDH) << 8;
+			  id_val |= (u32)ior(db, DM9000_PIDL) << 16;
+			  id_val |= (u32)ior(db, DM9000_PIDH) << 24;
+
+		  }
+		  ...;
+	  }
+    现在来看程序中是如何使用db->io_addr和db->io_data来访问DM9000的。dm9000_reset定义如下：
+        static void dm9000_reset(board_info_t *db)
+	{
+		/* RESET device */
+		writeb(DM9000_NCR, db->io_addr);
+		udelay(200);
+		writeb(NCR_RST, db->io_data);
+		udelay(200);
+	}
+     先往地址db->io_addr写入值DM9000_NCR，再往填db->io_data写入NCR_RST就可以复位DM9000.
+     下面再看ior函数，用来读取DM9000的寄存器，定义如下：
+        static u8
+	ior(board_info_t *db, int reg)
+	{
+		writeb(reg, db->io_addr); //先往地址db->io_addr写入寄存器地址 
+		return readb(db->io_data); //再从地址db->io_data读出数值
+	}
+     而iow定义如下：
+	static void
+	iow(board_info_t *db, int reg, int val)
+	{
+		writeb(reg, db->io_addr); //先往地址db->io_addr写入寄存器地址 
+		writeb(val, db->io_data); //再将数值写入地址db->io_data
+	}
+    （2）驱动源码修改
+     (a. 添加要包含的头文件：
+#if defined(CONFIG_ARCH_S3C2410)
+#include <mach/regs-mem.h>
+#endif
+     (b. 设置存储控制器使BANK4可用，设置默认的MAC地址：
+      static int 
+      dm9000_probe(struct platform_device *pdev)
+      {
+      		...;
+#if defined(CONFIG_ARCH_S3C2410)
+		unsigned int oldval_bwscon;
+		unsigned int oldval_bankcon4;
+#endif
+		...;
+#if defined(CONFIG_ARCH_S3C2410)
+		oldval_bwscon = *((volatile unsigned int*)S3C2410_BWSCON);
+		*((volatile unsigned int*)S3C2410_BWSCON) = (oldval_bwscon & ~(3 << 16)) \
+		| S3C2410_BWSCON_DW4_16 | S3C2410_BWSCON_WS4 | S3C2410_BWSCON_ST4;
+
+		oldval_bankcon4 = *((volatile unsigned int*)S3C2410_BANKCON4);
+		*((volatile unsigned int*)S3C2410_BANKCON4) = 0x1f7c;
+#endif
+		...;
+out:
+#if defined(CONFIG_ARCH_S3C2410)
+		*((volatile unsigned int*)S3C2410_BWSCON) = oldval_bwscon;
+		*((volatile unsigned int*)S3C2410_BANKCON4) = oldval_bankcon4;
+#endif
+		...;
+      }
+     
+   (c. 注册中断时，指定触发方式
+    在dm9000_open中使用request_irq函数注册中断处理函数，修改中断触发方式为上升沿触发：
+    	static int 
+	dm9000_open(struct net_device *dev)
+	{
+		board_info_t *db = (board_info_t *)dev->priv;
+		...;
+#if defined(CONFIG_ARCH_S3C2410)
+		if(request_irq(dev->irq, &dm9000_interrupt, IRQF_SHARED | IRQF_TRIGGER_RISING, dev->name, dev))
+#else
+		if(request_irq(dev->irq, &dm9000_interrupt, IRQF_SHARED, dev->name, dev))
+#endif
+		...;
+	}
+
+
+
+	总结：
+	   从CS8900A和DM9000的移植过程，读者可以了解到移植、修改标准驱动程序的方法：了解驱动程序框架，确定外设使用的资源，然后将它们告诉驱动程序，并进行适当设置使它们“可用”。串口驱动移植、网卡驱动移植都遵循这个步骤。

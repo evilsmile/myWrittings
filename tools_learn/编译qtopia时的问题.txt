@@ -1,0 +1,125 @@
+ubuntu下编译qtopia出错解决
+
+=======================================================================================================
+错误1：
+In file included from ../include/qmap.h:46:0,
+   from kernel/qmime.h:43,
+   from kernel/qevent.h:45,
+   from kernel/qobject.h:45,
+   from kernel/qwidget.h:43,
+   from kernel/qdesktopwidget.h:40,
+   from kernel/qapplication.h:42,
+   from kernel/qapplication_x11.cpp:64:
+   ../include/qvaluelist.h:88:13: 错误： ‘ptrdiff_t’不是一个类型名
+   ../include/qvaluelist.h:164:13: 错误： ‘ptrdiff_t’不是一个类型名
+   In file included from ../include/qmap.h:46:0,
+   from kernel/qmime.h:43,
+   from kernel/qevent.h:45,
+   from kernel/qobject.h:45,
+   from kernel/qwidget.h:43,
+   from kernel/qdesktopwidget.h:40,
+   from kernel/qapplication.h:42,
+   from kernel/qapplication_x11.cpp:64:
+   ../include/qvaluelist.h:424:13: 错误： ‘ptrdiff_t’不是一个类型名
+   In file included from kernel/qmime.h:43:0,
+   from kernel/qevent.h:45,
+   from kernel/qobject.h:45,
+   from kernel/qwidget.h:43,
+   from kernel/qdesktopwidget.h:40,
+   from kernel/qapplication.h:42,
+   from kernel/qapplication_x11.cpp:64:
+   ../include/qmap.h:107:13: 错误： ‘ptrdiff_t’不是一个类型名
+   ../include/qmap.h:223:13: 错误： ‘ptrdiff_t’不是一个类型名
+   In file included from kernel/qmime.h:43:0,
+   from kernel/qevent.h:45,
+   from kernel/qobject.h:45,
+   from kernel/qwidget.h:43,
+   from kernel/qdesktopwidget.h:40,
+   from kernel/qapplication.h:42,
+   from kernel/qapplication_x11.cpp:64:
+   ../include/qmap.h:604:13: 错误： ‘ptrdiff_t’不是一个类型名
+   kernel/qapplication_x11.cpp: 在函数‘void qt_init_internal(int*, char**, Display*, Qt::HANDLE, Qt::HANDLE)’中:
+   kernel/qapplication_x11.cpp:2009:8: 警告： 不建议使用‘KeySym XKeycodeToKeysym(Display*, KeyCode, int)’(声明于 /usr/include/X11/Xlib.h:1695) [-Wdeprecated-declarations]
+   kernel/qapplication_x11.cpp:2009:62: 警告： 不建议使用‘KeySym XKeycodeToKeysym(Display*, KeyCode, int)’(声明于 /usr/include/X11/Xlib.h:1695) [-Wdeprecated-declarations]
+   kernel/qapplication_x11.cpp:2039:8: 警告： 不建议使用‘KeySym XKeycodeToKeysym(Display*, KeyCode, int)’(声明于 /usr/include/X11/Xlib.h:1695) [-Wdeprecated-declarations] kernel/qapplication_x11.cpp:2039:66: 警告： 不建议使用‘KeySym XKeycodeToKeysym(Display*, KeyCode, int)’(声明于 /usr/include/X11/Xlib.h:1695) [-Wdeprecated-declarations]
+   kernel/qapplication_x11.cpp: 在成员函数‘int QApplication::x11ProcessEvent(XEvent*)’中:
+   kernel/qapplication_x11.cpp:3690:54: 警告： 建议在‘||’的操作数中出现的‘&&’前后加上括号 [-Wparentheses]
+   kernel/qapplication_x11.cpp:3703:54: 警告： 建议在‘||’的操作数中出现的‘&&’前后加上括号 [-Wparentheses]
+   kernel/qapplication_x11.cpp: 在成员函数‘bool QETWidget::translateMouseEvent(const XEvent*)’中:
+   kernel/qapplication_x11.cpp:4119:30: 警告： 建议在‘||’的操作数中出现的‘&&’前后加上括号 [-Wparentheses]
+   kernel/qapplication_x11.cpp: 在成员函数‘bool QETWidget::translateKeyEventInternal(const XEvent*, int&, QString&, int&, char&, int&, QEvent::Type&, bool)’中:
+   kernel/qapplication_x11.cpp:5158:8: 警告： 建议显式地使用花括号以避免出现有歧义的‘else’ [-Wparentheses] kernel/qapplication_x11.cpp:5229:52: 警告： 建议在‘||’的操作数中出现的‘&&’前后加上括号 [-Wparentheses]
+   kernel/qapplication_x11.cpp:5232:52: 警告： 建议在‘||’的操作数中出现的‘&&’前后加上括号 [-Wparentheses]
+   kernel/qapplication_x11.cpp: 在函数‘int isPaintOrScrollDoneEvent(Display*, XEvent*, XPointer)’中:
+   kernel/qapplication_x11.cpp:5521:34: 警告： 建议在‘||’的操作数中出现的‘&&’前后加上括号 [-Wparentheses]
+   make[2]: *** [.obj/release-shared-mt/qapplication_x11.o] 错误 1
+   make[2]:正在离开目录 `/opt/x86-qtopia/qtopia-2.2.0-FriendlyARM/dqt/src'
+   make[1]: *** [sub-src] 错误 2 make[1]:正在离开目录 `/opt/x86-qtopia/qtopia-2.2.0-FriendlyARM/dqt'
+   在/usr/yizhi/qtopia-free-2.2.0/dqt/include/路径下
+   打开qmap.h
+   添加
+		#include “stddef.h”
+		#include  <cstddef>
+   保存退出
+   再在同样的路径下打开qvaluelist.h添加
+		#include “stddef.h”
+		#include  <cstddef>
+   主要用strrchr函数时，从类型‘constchar*’到类型‘char*’的转换无效，新版本g++不支持报错了。
+
+
+=======================================================================================================
+   错误2
+   如果提示LSM，LICE错误，请安装相应的库文件。
+   sudo apt-get install libsm-dev:i386
+
+=======================================================================================================
+   错误3
+   usr/include/jpeglib.h:26:62: 致命错误: jconfig.h:没有那个文件或目录
+   请安装库文件
+   sudo apt-get install libjpeg-turbo8-dev:i386
+
+=======================================================================================================
+   错误4
+   Creating pngscale...make: Entering directory `/root/yizhi/qtopia-free-2.2.0/qtopia/util/pngscale'
+   ..make: *** [../../bin/pngscale] Error 1
+   make: Leaving directory `/root/yizhi/qtopia-free-2.2.0/qtopia/util/pngscale'
+   Failed to make pngscale
+   分析：
+   这是因为没有安装uuid和Xmu，因为在编译qtopia2.2.0的过程中需要安装工具uuid（Universally Unique Identifier,）和 xmu库文件。
+   解决办法：
+		apt-get install  uuid-dev:i386
+	       	apt-get install libxmu-dev:i386 libxmu6:i386
+	      ubuntu 12.04 64bit 编译qtopia 提示Creating qmake...No makedepend available
+	      主要原因是缺少相关库，所以执行就可解决问题：
+	      sudo apt-get install xutils-dev 
+=======================================================================================================
+    错误5：
+    backend/vobject.cpp: In function ‘VObject* addGroup(VObject*, constchar*)’:
+    backend/vobject.cpp:419: error: invalid conversion from ‘constchar*’ to ‘char*’ 
+    修改/x86-qtopia-2.2.0/qtopia/src/libraries/qtopia/backend/vobject.cpp:419行
+    char *dot = strrchr(g,'.');
+    为   char *dot = (char*)strrchr(g,'.');
+=======================================================================================================
+
+    错误6：
+    wavplugin.cpp: 在成员函数‘virtual bool WavPlugin::isFileSupported(constQString&)’中:
+    wavplugin.cpp:435:45: 错误：从类型‘constchar*’到类型‘char*’的转换无效 
+    修正/x86-qtopia-2.2.0/qtopia/src/plugins/codecs/wavplugin/wavplugin.cpp:435行
+    char *ext = strrchr( path.latin1(), '.' );
+    为   char *ext = (char*)strrchr( path.latin1(), '.' );
+=======================================================================================================
+    错误7：
+    /usr/bin/ld: .obj/release-shared/transferserver.o: undefinedreference to symbol 'crypt@@GLIBC_2.0'
+    /usr/bin/ld: note: 'crypt@@GLIBC_2.0' is defined in DSO/lib/libcrypt.so.1 so try adding it to the linker commandline 这个找了好久发现用了crypt函数 而没使用-lcrypt，  qtopia-2.2.0-FriendlyARM/qtopia/configure 1373行加入
+    print CONFIG_PRI "LIBS+=-lcrypt\n";
+    如下:
+   		 print CONFIG_PRI "QTOPIA_FONT_SIZES=$opt_fontsizes\n";
+		 print CONFIG_PRI"QTOPIA_FONT_FAMILIES=$opt_fontfamilies\n";
+		 print CONFIG_PRI "LIBS+=-lcrypt\n";
+		 注意修改每次build时都会从qtopia-2.2.0.tar.gz解压出来，需要修改qtopia-2.2.0.tar.gz里的文件,要不每次build都会被覆盖
+=======================================================================================================
+     错误8：
+     如果提示致命错误不能找到<linux/videodev.h>
+     是因为现在的ubuntu12.04内核include目录中已经不包含videodev.h头文件
+     解决办法
+     从工具链的头文件中copy一个到/usr/inlcude/linux目录下即可继续编译。

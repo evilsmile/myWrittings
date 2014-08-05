@@ -1,0 +1,214 @@
+一、CS8900A网卡特性
+    CS8900A是一款针对嵌入式应用的低成本局域以太网控制器。与其他以太网控制器不同，该款产品采用高集成度的设计，因此无需使用昂贵的外部元件。
+    CS8900A包括片上RAM、10Bast-T发送和接收滤波器，以及一个有24mA驱动器的直接ISA-Bus接口。
+    除了高集成度，CS8900A还具有众多性能特点，并可采用不同的配置。其独特的PacketPage架构可以自动适应网络流量模式和可用系统资源的变化。因此可以使系统效率大提高。
+    CS8900A采用100引脚TQFP封闭，是小型化及对成本敏感的以太网应用的理想选择。采用CS8900A，用户可以设计出完整的以太网电路，这些电路仅占用不到10cm2的板上空间。
+    CS8900A有如下特点:
+    * 单芯片有IEEE802.3以太网解决方案
+    * 拥有完整的软件驱动程序
+    * 高效的PacketPage架构可以采用DMA从模式在IO及存储空间运行
+    * 全双工操作
+    * 片上RAM缓冲区发送和接收架构
+    * 10Base-T端口和滤波器（极性检测及纠错）
+    * 10Base-2、10Base-5和10Base-F全部采用AUI端口
+    * 冲突自动再发送、填充及CRC功能
+    * 可编程接收功能
+    * 流传输可降低CPU负荷
+    * DMA和片上存储器间的自动切换
+    * 可早期中断结构先置处理
+    * 自动抵制错误信息包
+    * EEPROM支持无跳线配置
+    * Boot PROM支持无盘系统
+    * 边界扫描和循环测试
+    * LED驱动器支持链接状态及局域网活动
+    * 待机及休眠模式
+    * 工作电压为3～5V，满足商业及工业应用温度要求
+    * 5V最大功耗为120mA，5V典型功耗为90mA
+    * 采用100引脚无铅TQFP封装
+
+二、CS8900A网卡驱动程序修改
+    1. Linux系统网络架构概述
+    与串口驱动类似，网络驱动程序也是分为多个层次的：
+                          应用层
+			    |
+			系统调用接口
+			    |
+			协议无关接口
+			    |
+			 网络协议
+			    |
+			设备无关接口
+			    |
+			设备驱动程序
+			    |
+			 物理设备
+    最上面是用户空间层，或称为应用层，它通常是一个语义层，能够理解要传输的数据。例如，HTTP就是负责传输服务器和客户机之间对Web内容的请求与响应，而SMTP则向用户提供高效、可靠的邮件传输。
+    最下面是物理设备，提供了对网络的连接能力（串口或诸如以太网之类的高速网络）。
+    中间是内核空间，即网络子系统，它是驱动移植的重点所在。顶部是系统调用接口，它简单地为用户空间的应用程序提供了一种访问内核网络子系统的方法。位于它下面的是一个协议无关层，它提供了一种通用方法来使用底层传输层协议。再下面是实际协议，在Linux中包括内嵌的TCP、UDP协议，以及IP协议。然后是另外一个设备无关层，提供了与各个设备驱动程序通信的通用接口。设备驱动程序本身是移植工作的重点。
+
+    2. CS8900A驱动程序代码修改
+    Linux内核中已经有CS8900A网卡驱动程序，源文件在drivers/net/cs89x0.c。与移植扩展串口驱动程序类似，所要做的工作也是：“告诉内核”CS8900A芯片使用的资源（访问地址、中断号等），使得这些资源可用。
+    首先确定以下几点：
+        * CS8900A的访问基地为0x19000000（由BANK3的基址为0x18000000并且ADDR24为高可以确定）
+        * 总线位宽为16，用到nWAIT、nBE1（字节使能）信号。在CS8900A芯片手册中，nSBHE引脚被称为“System Bus High Enable”，它为低电平时表示系统数据总线上高字节（SD8～SD15）的数据有效。所以S3C2440中，“nBE1:nWBE1:DQM1”引脚的功能应该设为"nBE1"
+        * 中断引脚为EINT9
+     当把cs89x0.c编译进内核时，它的入口函数为cs89x_probe;编译为模块时，入口函数为init_module。这两个函数最终都会调用cs89x_probe1函数来枚举CS8900A。需要在调用cs89x_probe1函数之前，指明CS8900A芯片使用的资源。
+     drivers/net/cs89x0.c被编译进内核时，入口函数cs89x_probe在drivers/net/Space.c文件中被调用了8次，对于S3C2440开发板只需要调用一次（修改代码时会看到）。调用过程如下：
+     	net_olddevs_init ->
+		ethif_probes(被调用8次) ->
+			probe_list2 ->
+				cs89x_probe
+     下面修改驱动文件drivers/net/cs89x0.c。
+     （1）指定CS8900A使用的资源
+      在文件的开头增加以下几行，它们在宏CONFIG_ARCH_S3C2410被定义时起作用，表示用于S3C2440开发板。
+         #elif defined(CONFIG_ARCH_S3C2410)
+         #include <asm/irq.h>
+         #include <asm/arch-s3c2410/regs-mem.h>
+         #define S3C24XX_PA_CS8900 0x19000000 /* 物理地址 */
+         //用来指定网卡的访问地址，它是虚拟地址或IO地址，可以直接用来访问网卡
+         static unsigned int netcard_portlist[] __initdata = {0, 0}; /* 在后面的代码中进行设置 */
+	 static unsigned int cs8900_irq_map[] = {IRQ_EINT9, 0, 0, 0}; /* 中断号 */
+         #else
+	   ....
+      （2）修改入口函数cs89x_probe.
+           struct net_device * __init cs89x_probe(int unit)
+	   {
+		   ...;
+	    #if defined(CONFIG_ARCH_S3C2410)
+		   unsigned int oldval_bwscon;  /* 用来保存BWSCON寄存器的值 */
+		   unsigned int oldval_bankcon3; /* 用来保存S3C2410_BANKCON3寄存器的值 */
+	    #endif
+		   ...;
+		   io = dev->base_addr;
+		   irq = dev->irq;
+	    #if defined(CONFIG_ARCH_S3C2410)
+		   //cs89x_probe会被调用多次，我们只需调用1次，根据netcard_portlist[0]的值忽略后面的调用
+		   if(netcard_portlist[0])
+			   return -ENODEV;
+
+		   //将CS8900A的物理地址转换为虚拟地址，0x300是CS8900A内部的IO空间的偏移地址
+		   netcard_portlist[0] = (unsigned int)ioremap(S3C24XX_PA_CS8900, SZ_1M) + 0x300;
+
+		   /* 设置默认MAC地址，
+		    *  MAC地址可以由CS8900A外接的EEPROM设定（如果有的话），
+		    * 或者启动系统后使用ifconfig修改 
+		    */
+		   dev->dev_addr[0] = 0x08;
+		   dev->dev_addr[1] = 0x08;
+		   dev->dev_addr[2] = 0x08;
+		   dev->dev_addr[3] = 0x08;
+		   dev->dev_addr[4] = 0x08;
+		   dev->dev_addr[5] = 0x08;
+
+		   /* 设置Bank3: 总线宽度为16，使能nWAIT，使能UB/LB */
+		   oldval_bwscon = *((volatile unsigned int *)S3C2410_BWSCON);
+		   *((volatile unsigned int*)S3C2410_BWSCON) ＝ (oldval_bwscon & ~(3 << 12)) \
+			   | S3C2410_BWSCON_DW3_16 | S3C2410_BWSCON_WS3 | S3C2410_BWSCON_ST3;
+
+		   /* 设置BANK3的时间参数 */
+		   oldval_bankcon3 = *((volatile unsigned int *)S3C2410_BANKCON3);
+		   *((volatile unsigned int*)S3C2410_BANKCON3 = 0x1f7c;
+          #endif
+		   for(port = netcard_portlist; *port; port++){
+		   if(cs89x_probe1(dev, *port, 0) == 0)
+		   	...;
+	  out:
+	  #if defined(CONFIG_ARCH_S3C2410)
+	           iounmap(netcard_portlist[0]);
+		   netcard_portlist[0] = 0;
+		   
+		   /* 恢复寄存器原来的值 */
+		   *((volatile unsigned int*)S3C2410_BWSCON) = oldval_bwscon;
+		   *((volatile unsigned int*)S3C2410_BANKCON3) = oldval_bankcon3;
+	  #endif
+	  }
+      （3）修改模块入口函数init_module、卸载函数cleanup_module
+       init_module函数的修改与上述cs89x_probe函数相似，使用宏CONFIG_ARCH_S3C2410：
+          int __init init_module(void)
+	  {
+	  	struct net_device *dev = alloc_etherdev(sizeof(struct net_local));
+		...;
+	    #if defined(CONFIG_ARCH_S3C2410)
+		   unsigned int oldval_bwscon;  /* 用来保存BWSCON寄存器的值 */
+		   unsigned int oldval_bankcon3; /* 用来保存S3C2410_BANKCON3寄存器的值 */
+	    #endif
+		   ...;
+		   if(!dev)
+			   return -ENOMEN;
+
+	    #if defined(CONFIG_ARCH_S3C2410)
+
+		   //将CS8900A的物理地址转换为虚拟地址，0x300是CS8900A内部的IO空间的偏移地址
+		   dev->base_addr = io = (unsigned int)ioremap(S3C24XX_PA_CS8900, SZ_1M) + 0x300;
+		   dev->irq = irq = cs8900_irq_map[0]; /*中断号*/
+
+		   /* 设置默认MAC地址，
+		    *  MAC地址可以由CS8900A外接的EEPROM设定（如果有的话），
+		    * 或者启动系统后使用ifconfig修改 
+		    */
+		   dev->dev_addr[0] = 0x08;
+		   dev->dev_addr[1] = 0x08;
+		   dev->dev_addr[2] = 0x08;
+		   dev->dev_addr[3] = 0x08;
+		   dev->dev_addr[4] = 0x08;
+		   dev->dev_addr[5] = 0x08;
+
+		   /* 设置Bank3: 总线宽度为16，使能nWAIT，使能UB/LB */
+		   oldval_bwscon = *((volatile unsigned int *)S3C2410_BWSCON);
+		   *((volatile unsigned int*)S3C2410_BWSCON) ＝ (oldval_bwscon & ~(3 << 12)) \
+			   | S3C2410_BWSCON_DW3_16 | S3C2410_BWSCON_WS3 | S3C2410_BWSCON_ST3;
+
+		   /* 设置BANK3的时间参数 */
+		   oldval_bankcon3 = *((volatile unsigned int *)S3C2410_BANKCON3);
+		   *((volatile unsigned int*)S3C2410_BANKCON3 = 0x1f7c;
+          #endif
+		   if(io == 0){
+		          ...;
+			  goto out;
+		   }else if(io <= 0x1ff){
+		          ret = -ENXIO;
+			  goto out;
+		   }
+		   ret = cs89x_probe1(dev, io, 0);
+		   ...;
+	  out:
+	  #if defined(CONFIG_ARCH_S3C2410)
+	           iounmap(dev->base_addr);
+		   netcard_portlist[0] = 0;
+		   
+		   /* 恢复寄存器原来的值 */
+		   *((volatile unsigned int*)S3C2410_BWSCON) = oldval_bwscon;
+		   *((volatile unsigned int*)S3C2410_BANKCON3) = oldval_bankcon3;
+	  #endif
+		   free_netdev(dev);
+		   return ret;
+	  }
+
+       卸载驱动：
+	       void __exit cleanup_module(void)
+	       {
+		       unregister_netdev(dev_cs89x0);
+		       writeword(dev_cs89x0->base_addr, ADD_PORT, PP_ChipID);
+		       release_region(dev_cs89x0->base_addr, NETCARD_IO_EXTENT);
+		#if defined(CONFIG_ARCH_S3C2410)
+		       iounmap(dev_cs89x0->base_addr);
+		#endif
+		       free_netdev(dev_cs89x0);
+	       }
+   （4）注册中断处理程序时，指定中断触发方式
+    驱动程序中，在net_open函数使用request_irq函数注册中断处理函数。将CS8900A的中断触发方式修改为上升沿触发：
+         drivers/net/cs89x0.c:
+	    static int net_open(struct net_device *dev)
+	    {
+		    ...;
+		    write_irq(dev, lp->chip_type, dev->irq);
+	    #if defined(CONFIG_ARCH_S3C2410)
+		    ret = request_irq(dev->irq, &net_interrupt, IRQF_TRIGGER_RISING, dev->name, dev);
+	    #else
+		    ret = request_irq(dev->irq, &net_interrupt, 0, dev->name, dev);
+	    #endif
+    （5）其他修改
+      在drivers/net/cs89x0.c中适当的位置加上CONFIG_ARCH_S3C2410宏的编译开发，可以参照CONFIG_ARCH_PNX010X添加宏CONFIG_ARCH_S3C2410：
+      (a. 在net_open函数中，将#if !defined(CONFIG_SH_HICOSH4) && !defined(CONFIG_ARCH_PNX010X) 修改为添加 && !defined(CONFIG_ARCH_S3C2410)
+      (b. ...
+      (c. 全局变量“static int io;"改为"static unsigned int io;"

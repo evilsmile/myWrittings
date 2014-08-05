@@ -1,0 +1,25 @@
+1、解space_install.img文件：
+   1)、挂载img，参考“mount img文件.txt”文件。如果挂载img的第一个分区，在挂载目录下会看到两个文件夹（boot和lost+found）和两个文件（space.sys和usb），其中文件space.sys就是整个文件系统；img的第二个分区，包含有所有预装软件。
+   2)、把img解压出来，放到‘extract_img’（任意名称的）目录：
+	mkdir extract-cd
+	sudo rsync --exclude=space.sys –a mnt/ extract-cd
+
+   3)、提取文件系统：
+	$ sudo unsquashfs mnt/space.sys
+       为了编辑提取的文件系统，可拷贝一份到其他位置，如：
+	$ sudo cp -R squashfs-root space_edit
+
+*2、将需要定制的内容添加到或修改space_edit中相应的文件夹（具体步骤可参见《定制livecd-ubuntu.docx》）
+
+3、压缩文件系统：
+   sudo rm extract_img/filesystem.squashfs
+   sudo mksquashfs space_edit extract_img/space.sys
+
+4、制作镜像：
+
+
+
+
+
+
+

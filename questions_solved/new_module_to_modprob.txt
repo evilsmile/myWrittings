@@ -1,0 +1,2 @@
+对于放在/lib/module/`uname -r`下的模块，不管在哪一级，
+执行命令sudo depmod更新模块列表，这样执行modprob就可以直接找到，modprob modulename(不用.ko)

@@ -1,0 +1,61 @@
+一、printk
+  1. 在用户空间修改printk函数的记录级别
+  挂接proc文件系统后，读取/proc/sys/kernel/printk文件可以得知console_loglevel、default_message_loglevel、minimum_console_loglevel和default_console_loglevel这4个值：
+      # cat /proc/sys/kernel/printk 
+        7	4	1	7
+   可以直接修改/proc/sys/kernel/printk来改变这4个值：
+     # echo " 1 4 1 7" > /proc/sys/kernel/printk
+   这使得console_loglevel被改为1，于是所有的printk信息都不会打印。
+   NOTES:
+      * 对于printk("<n>..")，只有n小于console_loglevel时，这个信息才会打印。
+      * 如果printk的参数开头没有<n>样式，则会默认加上default_message_loglevel。
+      * 通过其他工具来设置console_loglevel时，值不能小于minimum_console_loglevel
+      * 通过其他工具来设置console_loglevel时，默认使用default_console_loglevel
+
+  2. 串口与printk函数的关系
+  在嵌入式linux开发中，printk信息常常从串口输出，这时串口称为串口控制台。
+  从内核kernel/printk.c的printk函数开始，往下查看它的调用关系，可以知道printk函数是如何与具体设备的输出函数挂钩的：
+      printk ->
+      	vprintk ->
+		emit_log_char 
+		release_console_sem ->
+			call_console_drivers ->
+				_call_console_drivers ->
+					__call_console_drivers ->
+						con->write //con是console_drivers链表的表项，调用具体的输出函数
+   对于可以作为控制台的设备，在初始化时会通过register_console函数向console_drivers链表注册一个console结构，里面有write函数指针。
+   以drivers/serial/s3c2410.c文件中的串口初始化函数s3c24xx_serial_initconsole为例，部分代码如下：
+       	static  int s3c24xx_serial_initconsole(void)
+	{
+		... ...
+		register_console(&s3c24xx_serial_console);
+		return 0;
+	}
+   s3c24xx_serial_console就是console结构，它的部分定义如下：
+       static struct console s3c24xx_serial_console = {
+	       .name = S3C24XX_SERIAL_NAME,  //"SAC"
+	       .device = uart_console_device, //init进程、用户程序打开/dev/console时用到
+	       .flags = CON_PRINTBUFFER,  //打印先前在log_buf中保存的信息
+	       .index = -1, //表示使用哪个串口由命令行参数决定
+	       .write = s3c24xx_serial_console_write, //串口控制台的输出函数
+	       .setup = s3c24xx_serial_console_setup, //串口控制台的设置函数
+       };
+   s3c24xx_serial_console_write是串口输出函数，它会调用s3c24xx_serial_console_putchar函数将要打印的字符一个个地从串口输出：
+      	static void
+      	s3c24xx_serial_console_putchar(struct uart_port *port, int ch)
+	{
+		unsigned int ufcon = rd_regl(cons_uart, S3C2410_UFCON);
+		while(!s3c24xx_serial_console_txrdy(port, ufcon))
+			barrier();
+		wr_regb(cons_uart, S3C2410_UTXH, ch);
+	}
+    
+   3. 设置内核命令行参数使用串口控制台
+   内核怎么根据"console=ttySAC0"这样的命令行参数确定printk的输出设备呢？
+   在kernel/printk.c中有如下代码：
+   　　　　　　　　__setup("console=", console_setup);
+   内核开始执行时，发现形如"console=..."的命令行参数时，就会调用console_setup函数进行解析。对于“console=ttySAC0”，它会解析出：设备名为ttySAC，索引为0，这些信息被保存在类型为console_cmdline的全局数组console_cmdline中。
+   在后面使用"register_console(&s3c24xx_serial_console)"注册控制台时，会将s3c24xx_serial_console结构与console_cmdline数组中的设备进行比较，发现名字、索引相同。
+   　1. s3c24xx_serial_console结构中名字为S3C24XX_SERIAL_NAME，即"ttySAC",而根据"console=ttySAC0"解析出来的名字也是"ttySAC"。
+   　2. s3c24xx_serial_console结构中索引为-1，表示使用命令行中解析出来的索引0，表示串口0.
+   综上所述，命令行参数"console=ttySAC0"决定printk信息将通过s3c24xx_serial_console结构中的相关函数，从串口0输出。

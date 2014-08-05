@@ -1,0 +1,21 @@
+一、USB驱动概述
+    USB（Universal Serial Bus），即“通用串行外部总线”，接口简单，只有5V电源和地、两根数据线D+和D-，可以外接硬盘、键盘、鼠标、打印机等等。要使用尽可能少的接口支持尽可能多的外设，USB是一个好的选择，尤其是在嵌入式设备。
+    USB总线规范有1.1版和2.0版。USB1.1.支持两种传输速率：低速1.5Mbit/s、全速(Full Speed）12Mbit/s，这样的速率足以满足鼠标、键盘、CDROM等设备。USB2.0提供了一种更高的传输速率：高速480Mbit/s。USB2.0向下兼容USB1.1，可以将遵循USB1.1规范的设备连接到USB2.0控制器上，也可以把USB2.0设备连接到USB1.1控制器上。
+    USB主机控制器（USB Host Controller）通过根集线器（Root Hub）与其他USB设备相连。集线器也属于USB设备，通过它可以在一个USB接口上扩展出多个接口。除根集线器外，最多可以层叠（一个接一个）5个集线器，每条USB电缆的最大长度是5m，所以USB总线的最大距离为30m。一条USB总线上可以外接127个设备，包括根集线器和其他集线器。整个结构图是一个星状结构，一条USB总线上所有设备共享一条通信主机的数据通道，同一时刻只能有一个设备与主机通信。
+    通过USB主机控制器来管理外接的USB设备，USB主机控制器共分3种：UHCI、OHCI和EHCI（HCI表示Host Controller Interface）。UCHI、OCHI属于USB1.1的主机控制器规范，而EHCI是USB2.0的主机控制器规范。UHCI（Universal HCI）是由Intel制定的标准，它的硬件所做的事情比较少，使得软件比较复杂。而OHCI（Open HCI）由Compaq、Microsoft、National Semiconductor联合制定的，在硬件方面它具备更多的智能，使得软件相对简单。
+    在配置内核的时候，经常可以看到”HCD“字样，表示"Host Controller Drivers”，即主机控制器驱动程序。比如有uhci-hcd、ohci-hcd和ehci-hcd等驱动模块。
+    USB驱动程序分为两类：USB主机控制器驱动程序（Host Controller Driver）、USB设备驱动程序（USB device drivers）。
+    USB主机控制器驱动程序提供访问USB设备的接口，它只是一个“数据通道”，至于这些数据有什么用，这要靠上层的USB设备驱动程序来解释。USB设备驱动程序使用下层驱动提供的接口来访问USB设备，不需要关心传输的具体细节。
+
+                                USER
+				 |
+           VFS       Block   Net      Char   TTY  ...
+				 |
+                         USB device Drivers
+       usb-hid usb-storage usb-printer usb-moniter ...
+				 |
+              UHCI-HCD        OHCI-HCD   EHCI-HCD
+				 |
+	            USB Host Controller Drivers
+                 uhci-hcd    ohci-hcd   ehci-hcd
+

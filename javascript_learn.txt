@@ -1,0 +1,160 @@
+一、ECMAScript的两种属性：数据属性，访问器属性
+ 1. 数据属性：javascript中的对象需要有的一些属性：[[Enumerable]],[[writable]],[[configurable]],[[value]],分别表示能否通过for-in循环返回属性,能否修改属性，能否通过delete删除属性从而重新定义属性,属性的数据值。可以通过如下方法重新定义属性：
+    var person = {};
+	Object.defineProperty(person, "name", { writable:false, value:"Nigu" });
+	Object.defineProperty(person, "name", { configurable:false, value:"Nigu" });
+    person.name = "Greg"; //不起作用
+
+  2. 访问器属性:[[Enumerable]],[[set]],[[get]],[[configurable]],其中set和get分别表示设置和读取属性时调用的函数。
+     如： var person = {};
+	      Object.defineProperty(person, "year", {get:function(){ }, set:function(newValue){}});
+
+  3. 定义多个属性：
+      var person = {};
+	  Object.defineProperties(person, {
+			//数据属性
+			_name:{
+				value:"John"
+			},   
+			//访问器属性
+			year:{
+				get:function(){}
+				set:function(newvalue){}
+			},
+	 };
+
+	 var descriptor = person.getOwnPropertyDescriptor(person, "year");
+	 alert(descriptor.get);
+
+二、创建对象
+    1. 工厂模式
+	   function createPerson(name, age)
+	   {
+	   		var o = new Object();
+			o.name = name;
+			o.age = age;
+			return o;
+	   }
+	   var p1 = createPerson("Yang", 23);
+	   var p2 = createPerson("Xu", 33);
+
+	2. 构造函数
+	   function Person(name, age)
+	   {
+			   this.name = name;   //相比工厂模式，不用定义新的变量，使用this，并且不返回
+			   this.age = age;
+	   }
+	   var p1 = new Person("Yang", 23);   //使用new都会调用构造函数，否则Person和普通函数一样
+	   var p2 = new Person("Xu", 33);
+	   alert(p1.constructor == Person);   //constructor(构造属性)指向Person
+
+	3. 原型模式
+	   function Person() {}
+	   Person.prototype.name = "Gigi";
+	   Person.prototype.sayName = function(){ alert(this.name); }
+	   var p1 = new Person();
+	   var p2 = new Person();
+	   alert(p1.sayName == p2.sayName);  //true,在原型模式中，对象共享sayName等所有属性
+       p1.name = "Huo"; //覆盖prototype中的name,不用再继续往prototype中搜索name属性
+	   alert(p1.hasOwnProperty("name")); //true
+	   delete(p1.name); //后续对name的访问会查找原型中的name
+	   alert(p1.hasOwnProperty("name")); //false
+	   
+	   另有一种简写方式:
+	   function Person() {}
+	   Person.prototype = {
+			constructor: Person, //默认是指向Object
+			name: "Gigi",
+			sayName: function(){ alert(this.name); }
+	   };
+	   不过这种方式将Person的prototype重写了，因此Person的constructor指向了默认的Object而不是Person。
+
+	   另外，可以通过以下方法列举Person中的属性和方法：
+	   alert(Object.keys(Person.prototype));
+	   alert(Object.getOwnPropertyNames(Person.prototype));
+
+    4. 组合使用构造函数和原型模式
+		//不共享数据，共享方法
+	   	function Person()
+		{
+				this.name = "Judy";
+				this.age = 23;
+		}
+		Person.prototype = {
+				constructor: Person,
+				sayName:function(){ alert(this.name); }
+		};
+
+	5. 稳妥构造模式
+		所谓稳妥对象就是既没有公共属性，方法也不引用this的对象。
+		function Person(name, age)
+		{
+				var o = new Object();
+				o.name = name;
+				o.age = age;
+
+				o.sayName = function(){ alert(name); }
+				return o;
+		};
+		var friends = Person("July", 23);
+	6. 动态原型模式
+		function Person()
+		{
+				this.name = "Judy";
+				this.age = 23;
+				if(typeof this.sayName != "funcion"){
+						Person.prototype.sayName = function(){ alert(this.name);}
+				}
+		}
+		var friends = new Person("July", 23);
+	7. 寄生构造模式
+	   基本思想是构造一个函数，这个函数只完成封装创建对象的代码，然后再返回新创建的对象。
+	   	function Person(name, age)
+		{
+				var o = new Object();
+				o.name = name;
+				o.age = age;
+				o.sayName = function(){ alert(name); }
+				return o;
+		}
+		var friends = new Person("July", 23);
+
+三、继承
+    1. 原型链
+	2. 借用构造函数
+	   function SuperType(){
+	          this.colors = ["red", "blue"];
+	   }
+	   function SubType(){
+		   //通过call在SubType环境下调用SuperType构造函数，使得每个instance都有colors的一个副本
+	         SuperType.call(this);
+	   }
+	   var instance1 = new SubType();
+	   instance1.colors.push("black");
+	   alert(instance1.colors);
+					   
+	   var instance2 = new SubType();
+	   alert(instance2.colors);
+    3. 组合继承
+	   思路是使用原型链实现对原型属性和方法的继承，而通过借用构造函数实现对实例属性的继承。这样，既通过在原型上定义方法实现了函数复用，又能保证每个实例都有自己的属性。
+	     function SuperType(name){
+				         this.name = name;
+						 this.colors = ["red", "blue", "green"];
+		 }
+		 SuperType.prototype.sayName = function(){alert(this.name);};
+		 function SubType(name, age){
+		        SuperType.call(this. name);
+		        this.age = age;
+		 }
+		SubType.prototype = new SuperType();
+		SubType.prototype.sayAge = function(){alert(this.age);};
+		var instance1 = new SubType("Ni", 29);
+		instance1.colors.push("black");
+		alert(instance1.colors);
+		instance1.sayName();
+		instance1.sayAge();
+		
+		var instance2 = new SubType("Grey", 27);
+		alert(instance2.colors);
+		instance2.sayName();
+		instance2.sayAge();

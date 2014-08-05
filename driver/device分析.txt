@@ -1,0 +1,28 @@
+1. 设备描述：
+   struct device{
+	   ....
+	   struct kobject kobj;
+	   char bus_id[BUS_ID_SIZE]; /* 总线上唯一标志该设备的字符串 */
+	   struct bus_type *bus;  /* 设备所在总线 */
+	   struct device_driver *driver; /* 管理该设备的驱动 */
+	   void *driver_data;  /* 该设备驱动使用的私有数据成员 */
+	   struct klist_node knode_class;
+	   struct class *class;
+	   struct attribute_group **groups;
+	   void (*release)(struct device *dev);
+   };
+
+2. 设备注册：
+    1) int device_register(struct device *dev);
+    2) void device_unregister(struct device *dev);
+    一条总线也是个设备，也必须按设备注册。
+
+3. 设备属性：
+   struct device_attribute{
+	   struct attribute attr;
+	   ssize_t (*show)(struct device *dev, struct device_attribute *attr, char *buf);
+	   ssize_t (*store)(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+   };
+   创建属性: int device_create_file(struct device *device, struct device_attribute *entry);
+   删除属性：void device_remove_file(struct device *dev, struct device_attribute *attr);
+

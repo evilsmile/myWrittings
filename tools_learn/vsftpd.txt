@@ -1,0 +1,6 @@
+用ftp登陆的时候一直提示"500 OOPS: vsftpd: refusing to run with writable root inside chroot()"的错误，这是因为目录的权限不能是777全打开的，而是755.
+所以要新建个目录权限为755.
+
+要修改ftp登陆后的根目录，修改/etc/vsftpd.conf，将anon_root=/home/ftpdir加入或打开.
+
+如果要让anonymous用户自如地建立目录，要修改write_enabled=YES

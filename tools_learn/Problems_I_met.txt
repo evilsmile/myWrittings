@@ -1,0 +1,7 @@
+Problem 1: Webkit
+	折腾webkit好几天，一直停留在编译的阶段，因为编译出来的QtTestBrowser一直无法正常运行。 
+        换了几个webkit的版本，从r12到r10，到r8和r6，编译都可以通过，用Qt4.8.4版本，但QtTestBrowser就是无法正常运行。
+	用strace跟踪发现它运行后阻塞在一个系统调用futex上，上网看了看发现它跟glibc有点关系，于是想起来之前编译某个qt版本的时候，configure出错提示要glibc >= 2.34.0，而我的是2.30.0。后来下了glibc2.34编译安装后，也就没出现这个问题了。
+	我想也许和这有关。 于是用ldd查看WebKitBuild/Release/lib目录中libQtWebKit.so所依赖的库，看到里面依赖的glibc是/lib/i386-linux-gnu/libglib-2.0.so.0，以前的库文件！极有可能是因为这个！
+	我export LD_LIBRARY_PATH=/usr/local/lib:/home/evilsmile/My_Programs/mpc-1.0.1/lib:/home/evilsmile/My_Programs/gmp-5.1.1/lib:/home/evilsmile/My_Programs/mpfr-3.1.1/lib:$LD_LIBRARY_PAT(mpc,gmp,mpfr是gcc4.7所依赖的一些库，也是我手动编译的)，然后再运行QtTestBrowser,OK,成了. ^_^
+	还有就是我想编译Debug版本的跟踪一下，但行不通，因为提示错误"Memory exhausted"，网上说想要编译debug版本至少要64位的OS,8G以上内存 @_@=>

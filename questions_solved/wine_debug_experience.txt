@@ -1,0 +1,5 @@
+1.  WINEDEBUG=trace+wbemprox bin/wine ***.exe
+    打开追踪wbemprox相关的trace信息.
+
+2. 指定执行winetricks的wine
+   env WINE=~/wine-git/wine winetricks mfc40 

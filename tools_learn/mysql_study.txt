@@ -1,0 +1,2 @@
+1.	设置自动递增的初值:ALTER TABLE cnit618 auto_increment=3;
+

@@ -1,0 +1,4 @@
+1.config IP:
+   sudo ifconfig wlan0 192.168.1.102/24
+2.config Gateway:
+   sudo route add default gw 192.168.1.1

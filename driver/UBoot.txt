@@ -1,0 +1,18 @@
+1. 编译U-Boot
+   首先make smdk2410_config;然后make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- all。
+
+2. 内核的复制和启动，可以通过如下命令来完成：bootm从内存、ROM、NOR Flash中启动内核，bootp则通过网络来启动，面是nboot从NAND Flash启动内核。它们都是先将内核映旬从各种媒介中读出，存放在指定的位置；然后设置标记列表以给内核传递参数；最后跳到内核的入口点去执行。
+
+3. 对于ARM架构的CPU，都是通过lib_arm/armlinux.c中的do_bootm_linux函数来启动内核。这个函数中，设置标记列表，最后通过"theKernel(0, bd->bi_arch_num, bd->bi_boot_params)"调用内核。其中，theKernel指向内核存放的地址（对于ARM架构的CPU，通常是0x30008000），bd->bi_arch_num就是前面board_init函数设置的机器类型ID，而bd->bi_boot_params就是标记列表的开始地址。
+
+4. 移植U-boot到mini2440
+   S3C2440是S3C2440的改进版，它们的操作类似。不过在系统时钟的设置、NAND Flash控制器的操作等方面有一些小差别。它们的MPLL、UPLL计算公式不一样，FCLK、HCLK和PCLK的分频化设置也不一样。
+   第一步、增加相应的文件
+   (1. cp -rf board/samsung/smdk2410/ board/samsung/mini2440
+   (2. 修改boad/samsung/mini2440/目录下的文件名及Makefile中对应的文件
+   (3. 根据本开发板使用的HCLK即100MHz，根据SDRAM芯片的具体参数重新计算REFCNT寄存器值，将board/samsung/mini2440/lowlevel_init.S中的#define REFCNT值更改为0x4f4(1268)。
+   (4. 在boards.conf文件中添加mini2440相关的条目
+
+    第二步、修改
+    (1. 修改FCLK、HCLK、PCLK的分频比1:4:8，设置UPLL为48MHz。
+      

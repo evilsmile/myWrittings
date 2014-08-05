@@ -1,0 +1,275 @@
+一、S3C2410/S3C2440 MMU特性
+   内存管理单元，MMU，负责虚拟地址到物理地址的映射，并提供硬件机制的内存访问权限检查。
+   S3C2410/S3C2440有如下特性：
+    + 与ARM V4兼容的映射长度、域、访问权限检查机制
+    + 4种映射长度：段（1MB）、大页（64KB）、小页（4KB）、极小页（1KB）
+    + 对每段都可以设置访问权限
+    + 大页、小页的每个子页（sub-page，即被映射页的1/4）都可以单独设置访问权限
+    + 硬件实现的16个域
+    + 指令TLB（含64个条目）、数据TLB（含64个条目）
+    + 硬件访问页表（地址映射、权限检查由硬件自动进行）
+    + TLB中条目的替换采用round-robin算法（也称cylic算法）
+    + 可以使整个TLB无效
+    + 可以单独使某个TLB条目无效
+    + 可以在TLB中锁定某个条目，指令TLB、数据TLB相互独立
+
+
+二、
+  一个程序在运行之前，没有必要全部装入内存，而仅需要将那些当前要运行的部分装入内存，其余部分在用到时再从硬盘调入，而当内存耗光时再将暂时不用的部分调出到硬盘。这使得一个大程序可以在较小的内存空间中运行，也使得内存中可以同时装入更多的程序并发执行。从用户的角度，访人造丝主所具有的内存容量将比实际内存容量大得多。
+  ARM CPU上的地址转换涉及到3个概念：虚拟地址（VA）、变换后的虚拟地址（MVA）、物理地址（PA）。没启动MMU时，CPU核、cache、MMU、外设等所有部件使用的都是物理地址；启动MMU后，CPU核对外发出的虚拟地址VA，VA被转换为MVA供cache、MMU使用，在这里MVA被转换为PA，最后使用PA读写实际设备。注意：
+     (1. CPU核看到的、用到的只是虚拟地址VA，至于VA如何最终落实到物理地址PA上，CPU是不理会的
+     (2. 而caches和MMU也是看不见VA的，它们利用由MVA转换得到PA
+     (3. 实际设备看不到VA、MVA，读写它们时使用的是物理地址PA
+     (4. MVA是除CPU核外的其他部分看到的虚拟地址
+
+
+三、VA与MVA的转换
+    如果VA<32M，需要使用进程标识号PID（通过读CP15的C13获得）来转换为MVA。VA与MVA的转换方法如下（这是硬件自动完成的）：
+             if(VA < 32M) then
+	         MVA = VA | (PID << 25)
+             else
+	         MVA = VA
+    利用PID生成MVA的目的是为了减少切换进程时的代价：不使用MVA而直接使用VA的话，当两个进程所用的虚拟地址空间（VA）有重叠时，在切换进程时为了把重叠的VA映射到不同的PA上，需要重建页表、使无效caches和TLBS等，代价非常大。使用MVA后，进程切换就省事多了：假设两个进程1、2运行时的VA都是0～（32M-1），但是它们的MVA并不重叠，分别是0x02000000~0x03FFFFFF、0x40000000~0x05FFFFFFF，这样就不用重建页表等工作了。
+
+四、指令Cache
+   指令Cache，即ICaches，使用比较简单。系统刚上电或复位时，ICaches中的内容是无效的，并且ICaches功能是关闭着的。往Icr位，即CP15协处理器中寄存器1的第12位，写1可以启动ICaches，写0可以停止ICaches。
+   ICaches一般在MMU开启之后使用，此时页表中描述符的C位（称为Ctt）用来表示一段内存是否可以被Cache。若Ctt＝1，则允许Cache，否则不允许被Cache。但是即使MMU没有开启，ICaches也是可以被使用的，这时CPU读取指令时所涉及的内存都被当作是允许Cache的。
+   ICaches被开启后，CPU每次取指时都会先在ICaches中查看是否能找到所要的指令，而不管Ctt是0还是1.如果找到了则命中，否则缺失。ICaches被开启后，CPU的取指分为如下3种情况：
+     (1. Cache命中且Ctt为1，从ICaches中取出指令，返回CPU
+     (2. Cache缺失且Ctt为1，CPU从主存中读出指令，同时发生一个称为“8-word linefill”的动作，把该指令所处区域的8个word写进ICaches的某个条目中
+     (3. Ctt为0时，CPU从主存中读出指令
+
+五、数据Cache（DCaches)
+    与ICaches相似，系统刚上电或复位时，DCaches中的内容也是无效的，并且DCaches功能也是关闭着的，而Write Buffer中的内容也是被废弃不用的。往Ccr位（即CP15协处理器中寄存器1的第2位）写1可以启动DCaches，写0可以停止DCaches。Write Buffer与DCaches紧密结合，没有专门的控制位来开启、停止它。
+    与ICaches不同，DCaches功能必须在MMU开启之后才能被使用，因为开启MMU之后，才能使用页表中的描述符来定义一块内存如何使用DCaches和Write buffer。
+    DCaches被关闭时，CPU每次读写数据都要操作主存，DCaches和Write Buffer被完全忽略。而当DCaches被开启后，CPU每次读写数据时都会先在DCaches中查看是否能找到所要的数据，而不管Ctt是0还是1。
+    实际工作中，DCaches和Write Buffer在Ccr、Ctt和Btt的各种取值下工作。Btt表示是否采用写回模式。
+
+
+六、
+    与TLB类似，使用Cache时需要保证Cache、Write Buffer的内容和主存内容保持一致，需要遵循如下两个原则：
+      (1. 清空DCaches，使得主存数据得到更新
+      (2. 使无效ICaches，使得CPU取指时重新读取主存
+    在实际编写程序时，需要注意如下几点：
+      (1. 开启MMU前，使无效ICaches、DCaches和Write Buffer
+      (2. 关闭MMU前，清空ICaches、DCaches，即将“脏”数据写到主存上
+      (3. 如果代码有变，使无效ICaches，这样CPU取指时会重新读取主存
+      (4. 使用DMA操作可以被Cache的内存时，将内存的数据发送出去时，要清空Cache；将内存的数据读入时，要使无效Cache
+      (5. 改变页表中地址映射关系时也要慎重考虑
+      (6. 开启ICaches或DCaches时，要考虑ICaches或DCaches中的内容是否与主存保持一致
+      (7. 对于I/O地址空间，不使用Cache和Write Buffer。所谓IO地址空间，就是对于其中的地址连续两次的写操作不能合并在一直，每次读写操作都必须直接访问设备，否则程序的运行结果无法预料。
+
+
+七、MMU、TLB、Cache的控制指令
+    S3C2410/S3C2440中，除了有一个ARM920T的CPU核外，还有若干个协处理器。协处理器也是一个微处理器，它被用来帮助主CPU完成一些特殊功能，比如浮点计算等。对MMU、TLB、Cache等的操作就涉及协处理器。CPU核与协处理器间传送数据时使用这两条指令：MRC和MCR。
+    <MCR | MRC> { cond } p#, <expression1>, Rd, cn, cm{, <expression2>}
+    MRC          //从协处理器获得数据，传给ARM920T CPU核的寄存器
+    MCR          //数据从ARM920T CPU核的寄存器传给协处理器
+    { cond }     //执行条件，省略时表示无条件执行
+    p#           //协处理器序号
+    <expression1>   //一个常数
+    Rd            //ARM920T CPU核的寄存器
+    cn和cm        //协处理器中的寄存器
+    <expression2> //一个常数
+    其中<expression1>、cn、cm、<expression1>仅供协处理器使用。
+
+
+
+八、MMU使用实例：地址映射
+   程序流程如下：
+     开始  ->  关闭WATCHDOG  ->  设置栈指针  ->  初始化SDRAM  ->  复制第二部分代码到SDRAM中  ->  设置页表  -> 启动MMU ->  跳到0xB0004000 -> 循环点亮LED
+
+   [1. head.S
+     @*************************************************************
+     @ File: head.S
+     @ 功能：设置SDRAM， 并将第二部分代码复制到SDRAM， 设置页表，启动MMU
+     @       然后跳转到SDRAM继续执行
+     @*************************************************************
+
+     .text
+     .global _start
+     _start:
+         ldr sp, =4096
+	 bl disable_watch_dog
+	 bl memsetup
+	 bl copy_2th_to_sdram
+	 bl create_page_table
+	 bl mmu_init
+	 ldr sp, =0xB4000000
+	 ldr pc, =0xB0004000
+     halt_loop:
+        b halt_loop
+
+    head.S中调用的函数都在init.c中实现。
+
+    (2. init.c
+     /* 
+      * init.c: 进行一些初始化，在Steppingstone中运行
+      * 它和head.S同属第一部分程序，此时MMU未开启，使用物理地址
+      */
+      
+     /* WATCHDOG寄存器 */
+     #define WTCON   (*(volatile unsigned long*)0x53000000)
+     /* 存储控制器的寄存器起始地址 */
+     #define MEM_CTL_BASE 0x48000000
+
+     /* 关闭WATCHDOG，否则CPU会不断重启 */
+     void disable_watch_dog(void)
+     {
+           WTCON = 0;
+     }
+
+     /* 设置存储控制器以使用SDRAM */
+     void memsetup(void)
+     {
+           unsigned long const mem_cfg_val[] = {
+		   0x22011110,               //BWSCON
+		   0x...,               //BANKCON0
+		   		...
+		   0x...,               //BANKCON7
+		   0x...,               //REFRESH 
+		   0x...,               //BANKSIZE 
+		   0x...,               //MRSRB6
+		   0x...,               //MRSRB7
+	   };
+
+	   int i = 0;
+	   volatile unsigned long *p = (volatile unsigned long*)MEM_CTL_BASE;
+	   for(; i < 13; i++)
+		   p[i] = mem_cfg_val[i];
+     }
+
+     /* 将第二部分代码复制到SDRAM */
+     void copy_2th_to_sdram(void)
+     {
+	     unsigned int *pdwSrc = (unsigned int*)2048;
+	     unsigned int *pdwDest = (unsigned int*)0x30004000;
+
+	     while(pdwSrc < (unsigned int *)4096){
+		     *pdwDest = *pdwSrc;
+		     pdwDest++;
+		     pdwSrc++;
+	     }
+     }
+
+     /* 0～（1M－1）：VA＝PA
+	GPIO寄存器：PA(0x5600000 ~ (0x5600000 + 1M - 1)) = VA(0xA0000000~(0xA0000000 + 1M - 1))
+	SDRAM地址：PA(0x300000~0x33FFFFFFF) = VA(0xB000000~0xB3FFFFFF)
+	*/
+     void create_page_table(void)
+     {
+	  #define MMU_FULL_ACCESS (3 << 10) 
+          #define MMU_DOMAIN  (0 << 5)
+	  #define MMU_SPECIAL (1 << 4)
+	  #define MMU_CACHABLE (1 << 3)
+	  #define MMU_BUFFERABLE (1 << 2)
+	  #define MMU_SECTION (2)
+	  #define MMU_SECDESC  (MMU_FULL_ACCESS | MMU_DOMAIN | MMU_SPECIAL \
+			  MMU_SECTION)
+	  #define MMU_SECDESC_WB (MMU_FULL_ACCESS | MMU_DOMAIN | MMU_SPECIAL \
+			  MMU_CACHABLE | MMU_BUFFERABLE | MMU_SECTION)
+	  #define MMU_SECTION_SIZE 0x00100000
+
+	  unsigned long virtualaddr, physicaladdr;
+	  unsigned long *mmu_tlb_base = (unsigned long*)0x30000000;
+	  
+	  virtualaddr = 0;
+	  physicaladdr = 0;
+	  *(mmu_tlb_base + (virtualaddr >> 20)) = (physicaladdr & 0xFFF00000) | MMU_SECDESC_WB; 
+
+
+	  virtualaddr = 0xA0000000;
+	  physicaladdr = 0x5600000;
+	  *(mmu_tlb_base + (virtualaddr >> 20)) = (physicaladdr & 0xFFF00000) | MMU_SECDESC;
+
+	  virtualaddr = 0xB0000000;
+	  physicaladdr = 0x30000000;
+
+	  while(virtualaddr < 0xB4000000){
+		*(mmu_tlb_base + (virtualaddr >> 20)) = (physicaladdr & 0xFFF00000) | \
+							MMU_SECDESC_WB);
+		virtualaddr += 0x100000;
+		physicaladdr += 0x100000;
+	  }
+     }
+
+     void mmu_init(void)
+     {
+	     unsigned long ttb = 0x30000000;
+
+     __asm__(
+	     "mov r0, #0\n"
+	     "mcr p15, 0, r0, c7, c7, 0\n"   /* 使无效ICaches和DCaches */
+	     "mcr p15, 0, r0, c7, c10, 4\n"  /* drain write buffer on v4 */
+	     "mcr p15, 0, r0, c8, c7, 0\n"   /* 使无效指令、数据TLB */
+	     "mov r4, %0\n"                  /* r4 = 页表基址 */
+	     "mcr p15, 0, r4, c2, c0, 0\n"   /* 设置页表基址寄存器 */
+	     "mvn r0, #0\n"
+	     "mcr p15, 0, r0, c3, c0, 0\n"    /*域访问控制寄存器设为0xFFFFFFFF，不进行权限检查 */
+	     /* 对于控制寄存器，先读出其值，在这基础上修改感兴趣的位，然后再写入 */
+	     "mrc p15, 0, r0, c1, c0, 0\n"    /*读出控制寄存器的值 */
+
+	     "bic r0, r0, #0x3000\n"  /* clear V,I bit */
+	     "bic r0, r0, #0x0300\n"  /* clear R,S bit */
+	     "bic r0, r0, #0x0087\n"  /* clear B/C/A/M bit */
+
+	     /* 设置需要的位 */
+	     "orr r0, r0, #0x0002\n"   /* 开启对齐检查 */
+	     "orr r0, r0, #0x0004\n"   /* 开启DCaches */
+	     "orr r0, r0, #0x1000\n"   /* 开启ICaches */
+	     "orr r0, r0, #0x0001\n"   /* 使能MMU */
+
+	     "mcr p15, 0, r0, c1, c0, 0\n"  /* 将修改后的值写入控制寄存器 */
+	     : /* No output */
+	     : "r"(ttb));
+     }
+
+
+    (3. leds.c
+     /*  leds.c: 循环点亮4个LED，属于第二部分程序，此时MMU已开启，使用虚拟地址 */
+#define GPBCON (*(volatile unsigned long*)0xA0000010)
+#define GPBDAT (*(volatile unsigned long*)0xA0000014)
+
+#define GPB5_out (1 << (5 * 2))
+#define GPB6_out (1 << (6 * 2))
+#define GPB7_out (1 << (7 * 2))
+#define GPB8_out (1 << (8 * 2))
+
+     static inline void wait(unsigned long delay)
+     {
+     	for(; dly > 0; dly--);
+     }
+
+     int main(void)
+     {
+     	unsigned long i = 0;
+	GPBCON = GPB5_out | GPB6_out | GPB7_out | GPB8_out;
+	while(1){
+		wait(3000000);
+		GPBDAT = (~(i << 5));
+		if(++i == 16)
+			i = 0;
+	}
+	return 0;
+
+
+
+    (4. Makefile
+        objs := head.o init.o leds.o
+	mmu.bin: $(objs)
+		arm-linux-ld -Tmmu.lds -o mmu_elf $^
+		arm-linux-objcopy -O binary -S mmu_elf $@
+		arm-linux-objdump -D -m arm mmu_elf > mmu.dis
+	%.o:%.c
+		arm-linux-gcc -Wall -O2 -c -o $@ $<
+	%.o:%.S
+		arm-linux-gcc -Wall -O2 -c -o $@ $<
+ 	clean:
+		rm -rf mmu.bin mmu_elf mmu.dis *.o
+
+    (5. mmu.lds
+         SECTIONS{
+	 	first 0x0000000　: { head.o init.o }
+		second 0xB0004000 : AT(2048) { leds.o }
+	}
+     }

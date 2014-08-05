@@ -1,0 +1,32 @@
+一、内核启动init进程
+  内核启动的最后一步就是启动init进程，代码在init/main.c文件中，对应函数init_post()。
+  内核启动init进程的过程如下：
+  1. 打开标准输入、标准输出、标准错误设备。
+     尝试打开/dev/console设备文件，如果成功，它就是init进程标准输入设备。然后将文件描述符0复制给文件描述符1、2。
+  2. 如果ramdisk_execute_command变量指定了要运行的程序，则启动它。
+     ramdisk_execute_command的取值分为3种情况：
+     (1. 通过命令行参数指定"rdinit=..."
+     (2. 否则，如果/init程序存在，ramdisk_execute_command就等于"/init"
+     (3. 否则，ramdisk_execute_command为空。
+  3. 如果execute_command变量指定了要运行的程序，启动它。
+     如果命令行参数中指定了“init=...”，则execute_command等于这个参数指定的程序，否则为空。
+  4. 依次尝试执行/sbin/init、/etc/init、/bin/init、/bin/sh。
+
+二、Busybox中的/sbin/init
+    内核启动init进程时已经打开了“/dev/console”设备作为控制台，一般情况下Busybox init程序就使用/dev/console。但是如果内核启动init进程的同时设置了环境变量CONSOLE或console，则使用环境变量所指定的设备。在Busybox init程序中，还会检查这个设备是否可以打开，如不能则使用“/dev/null”。
+    Busybox init进程只是作为其他进程的发起者和控制者，并不需要控制台与用户交互，所以init进程会把它关掉。init进程创建其他子进程时，如果没有在/etc/inittab中指明它的控制台，则使用前面确定的控制台。
+    如果存在/etc/inittab文件，Busybox init程序解析它，然后按照它的指示创建各种子进程；否则使用默认的配置创建子进程。在/etc/inittab文件的控制下，init进程的行为总结如下：
+     1. 在系统启动前期，init进程首先启动<action>为sysinit、wait、onece这3类子进程
+     2. 在系统正常运行期间，init进程首先启动<action>为respawn、askfirst的两类子进程，并监视它们，发现某个子进程退出时重新启动它。
+     3. 在系统退出时，执行<action>为shutdown、restart、ctrlaltdel的3类子进程（之一或全部）。
+
+    如果要文件系统中没有/etc/inittab文件，Busybox init程序将使用如下默认的inittab条目：
+      ::sysinit:/etc/init.d/rcS
+      ::askfirst:/bin/sh
+      tty2::askfirst:/bin/sh
+      tty3::askfirst:/bin/sh
+      tty4::askfirst:/bin/sh
+      ::ctrlaltdel::/sbin/reboot
+      ::shutdown:/sbin/swapoff -a
+      ::shutdown:/bin/umount -a -r
+      ::restart:/sbin/init

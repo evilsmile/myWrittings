@@ -1,0 +1,17 @@
+1. httpd
+  (1. 安装
+    ./configure --prefix=$HOME/My_Programs/apache2 --enable-module=shared --with-apr=/your/apr/dir --with-apr-util=/your/apr-util/dir/
+     注意要加--enable-module=shared
+  (2. 配置
+     apache2目录下的htdoc/存放网页文件，conf/httpd.conf中设置访问端口。
+
+
+2. php5
+  (1. 安装
+   ./configure --prefix=/usr/local/php  --with-apxs2=/home/evilsmile/My_Programs/apache2/bin/apxs
+    注意要加--with-apxs2路径
+  (2. 配置
+     在conf/httpd.conf文件中加入:
+      <FilesMatch \.php$>
+          SetHandler application/x-httpd-php
+      </FilesMatch>

@@ -1,0 +1,2 @@
+1. ./configure --prefix=$HOME/My_Programs/Mesa-10.1.0_ --disable-dri3时提示libdrm-intel1版本要大于52，从网站下载并编译安装到Mesa-10.1.0_目录后重新configure还是提示版本低，这时候需要设置 PKG_CONFIG_PATH环境变量:
+ export PKG_CONFIG_PATH=/home/evilsmile/My_Programs/Mesa-10.1.0_/lib/pkgconfig/
