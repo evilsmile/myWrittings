@@ -1,0 +1,102 @@
+基础：
+	1. 数据抽象：物理抽象、概念抽象、视图级抽象，内模式、模式、外模式
+	2. SQL语言包括数据定义、数据操纵、数据控制
+	   数据定义：Create Table, Alter Table, Drop Table, Create/Drop Index等
+	   数据操纵：Select，insert，update，delete
+	   数据控制：grant，revoke
+	3. SQL常用命令：
+	       create table student(id number primary key, 
+						   name varchar2(50) not null);
+		   create view view_name as select * from table_name;
+		   create unique index index_name on table_name(col_name);
+		   insert into table_name {column1, column2,..} values(exp1, exp2..);
+		   insert into view_name {column1, column2,...} values(exp1, exp2,...);
+		   update table_name set name='zhang3' condition;
+		   delete from table_name where condition;
+		   grant (select, delete,..) on (对象) to user_name [with grant option];
+		   revoke (权限表) on (对象) from user_name [with revoke option];
+     4. 视图
+	 5. 完整性约束：实体完整性、参照完整性、用户定义完整性。
+	 6. 什么是第三范式：
+	 	1NF：每个属性是不可分的。
+		2NF：若关系R是1NF，且每个非主属性都完全依赖于R的键。
+		3NF：若R是2NF，且它的任何非键属性都不传递依赖于任何候选键。
+	 7. ER（实体/联系）模式
+	 8. 索引作用
+	 9. 事务：是一系列的数据操作，是数据库应用的基本逻辑单元。
+	    事务性质：原子性：即不可分割，事务要么全部被执行，要么就全部不被执行。
+		          一致性：事务的执行使得数据库从一种正确状态转换成另一种正确状态。
+				  隔离性：在事务正确提交之前，不允许把该事务对数据的任何改变提供给任何其他事务。
+				  持久性：事务正确提交后，其结果将永久保存在数据库中，即使在事务提交后有了其他故障，事务的处理结果也会得到保存。
+	  10. 锁：共享锁、互斥锁。
+	  11. 死锁及处理：事务循环等待数据锁，则会死锁。预防死锁协议，死锁恢复机制。
+	  12. 存储过程：存储过程就是编译好了的一些SQL语句：
+	      (1. 存储过程因为SQL语句已经编译过了，因此运行的速度比较快。
+		  (2. 可保证数据的安全性和完整性。通过存储过程可以使没有权限的用户在控制之下间隔地存取数据库，从而保证数据的安全。通过存储过程可以使相关的动作在一起发生，从而可以维护数据库的完整性。
+		  (3. 可以降低网络的通信量：因为存储过程主要是在服务器上运行，减少对客户机的压力。
+		  (4. 存储过程可以接受参数、输出参数、返回单个或多个结果集以及返回值。可以向程序返回错误原因。
+		  (5. 存储过程可以包含程序流、逻辑以及对数据库的查询。同时可以实体封装和隐藏了数据逻辑。
+	   13. 触发器：当满足触发器条件时，系统自动执行触发器的触发体。
+	   14. 内联接、外联接的区别？
+	       内连接是保证两个表中所有的行都要满足连接条件，而外连接中，某些不满足条件的列也会显示出来（分左连接、右连接、全连接）。
+
+
+经典查询：
+      1. 一道SQL语句面试题，关于group by
+	  　　表内容：
+	  　　2005-05-09 胜
+	  　　2005-05-09 胜
+	  　　2005-05-09 负
+	  　　2005-05-09 负
+	  　　2005-05-10 胜
+	  　　2005-05-10 负
+	  　　2005-05-10 负
+	  　　如果要生成下列结果, 该如何写sql语句?
+	  　　胜 负
+	  　　2005-05-09 2 2
+	  　　2005-05-10 1 2
+	  　　------------------------------------------
+		  　　create table #tmp(rq varchar(10),shengfu nchar(1))
+		　　insert into #tmp values('2005-05-09','胜')
+		　　insert into #tmp values('2005-05-09','胜')
+		　　insert into #tmp values('2005-05-09','负')
+		　　insert into #tmp values('2005-05-09','负')
+		　　insert into #tmp values('2005-05-10','胜')
+		　　insert into #tmp values('2005-05-10','负')
+		　　insert into #tmp values('2005-05-10','负')
+		　　1)select rq, sum(case when shengfu='胜' then 1 else 0 end)'胜',sum(case when shengfu='负' then 1 else 0 end)'负' from #tmp group by rq
+		　　2) select N.rq,N.胜,M.负 from (
+				　　select rq,胜=count(*) from #tmp where shengfu='胜'group by rq)N inner join
+		　　(select rq,负=count(*) from #tmp where shengfu='负'group by rq)M on N.rq=M.rq
+		　　3)select a.col001,a.a1 胜,b.b1 负 from
+		　　(select col001,count(col001) a1 from temp1 where col002='胜' group by col001) a,
+		　　(select col001,count(col001) b1 from temp1 where col002='负' group by col001) b
+		　　where a.col001=b.col001
+		2.请教一个面试中遇到的SQL语句的查询问题
+		　　表中有A B C三列,用SQL语句实现：当A列大于B列时选择A列否则选择B列，当B列大于C列时选择B列否则选择C列。
+		　　------------------------------------------
+		　　select (case when a>b then a else b end ),
+		　　(case when b>c then b esle c end)
+		　　from table_name
+		3.面试题：一个日期判断的sql语句？
+		　　请取出tb_send表中日期(SendTime字段)为当天的所有记录?(SendTime字段为datetime型，包含日期与时间)
+		　　------------------------------------------
+		　　select * from tb where datediff(dd,SendTime,getdate())=0
+		4.有一张表，里面有3个字段：语文，数学，英语。其中有3条记录分别表示语文70分，数学80分，英语58分，请用一条sql语句查询出这三条记录并按以下条件显示出来（并写出您的思路）：
+		　　大于或等于80表示优秀，大于或等于60表示及格，小于60分表示不及格。
+		　　显示格式：
+		　　语文              数学                英语
+		　　及格              优秀                不及格
+		　　------------------------------------------
+		　　select
+		　　(case when 语文>=80 then '优秀'
+						　　when 语文>=60 then '及格'
+						　　else '不及格') as 语文,
+		　　(case when 数学>=80 then '优秀'
+						　　when 数学>=60 then '及格'
+						　　else '不及格') as 数学,
+		　　(case when 英语>=80 then '优秀'
+						　　when 英语>=60 then '及格'
+						　　else '不及格') as 英语,
+		　　from table
+		

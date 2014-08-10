@@ -1,0 +1,25 @@
+1. archive静态库只是一些object的集合，链接到程序中时，链接程序会找到程序中使用了的archive模块链接进去，未用的不链接进去。
+
+2. 相比静态库，so里的object文件组合成一个单一的object，程序在链接时总是会把所有的代码都包含进去，而不是需要的一部分。
+
+3. gcc -c -fPIC test1.c
+   -fPIC告诉编译器你将会使用test1.o作为共享库的一部分。PIC, Position-Independt Code，告诉编译器共享对象不能依赖于地址。
+
+4. gcc -shared -fPIC -o libtest.so test1.o test2.o
+
+5. 除非指定好了，不然链接器默认会优先选择动态库进行链接。
+   要指定使用静态库的话，需要加参数-static.
+
+6. 程序在链接动态共享库时，链接器并不是把共享库全路径名放到程序里，而只是共享库的名字。程序运行时，系统需要寻找这个库并加载。
+   除了LD_LIBRARY_PATH方法，还可以通过加gcc的选项-Wl,-rpath,/usr/local/lib，（-Wl是给linker传参数，后面跟着的即是要传的参数)，这样程序运行时会到/usr/loca/lib/寻找库文件。
+
+7. 如果一个库依赖于多个别的库，并且如果想用静态方式生成程序，则需要在gcc选项中把所有的库文件依赖都写出来，如：
+   gcc -static -o tifftest tifftest.c -ltiff -ljpeg -lz(libtiff依赖于libjpeg,libz)
+
+8. 有时两个库会相互依赖，即第一个archive指向第二个achive中定义的符号，第二个achive又有指向第一个achive的符号。虽然造成这个问题是由于糟糕的设计，但确实会出现。在这种情况下，可以通过在命令行多次提供这个库。linker会在它每次出现的时候进行搜索。如：
+     gcc -o app app.o -lfoo -labr -lfoo
+   
+9. 使用dlopen(path, option), dlsym(handle, name), dlclose(handle)和-ldl, dlfcn.h进行动态加载和卸载。
+   只有在库未加载时才进行加载，如果已加载则只需要增加引用计数。
+
+
