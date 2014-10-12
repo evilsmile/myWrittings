@@ -102,7 +102,7 @@
 		
 
 
-//增加id字段并设为主键、自增
+//增加id字段并设为主键、自增(见下，有最正确的做法)
 alter table tt add id int(11);
 update tt set id=1 where month=1;
 update tt set id=2 where month=2;
@@ -154,3 +154,16 @@ mysql> CREATE TABLE insect
 或者你也可以在表创建成功后，通过以下语句来实现：
 
 mysql> ALTER TABLE t AUTO_INCREMENT = 100;
+
+如果我们设置了唯一索引，那么在插入重复数据时，SQL语句将无法执行成功,并抛出错。
+
+INSERT IGNORE INTO与INSERT INTO的区别就是INSERT IGNORE会忽略数据库中已经存在的数据，如果数据库没有数据，就插入新的数据，如果有数据的话就跳过这条数据。这样就可以保留数据库中已经存在数据，达到在间隙中插入数据的目的。
+
+以下实例使用了INSERT IGNORE INTO，执行后不会出错，也不会向数据表中插入重复数据：
+
+mysql> INSERT IGNORE INTO person_tbl (last_name, first_name)
+		-> VALUES( 'Jay', 'Thomas');
+		Query OK, 1 row affected (0.00 sec)
+mysql> INSERT IGNORE INTO person_tbl (last_name, first_name)
+		-> VALUES( 'Jay', 'Thomas');
+Query OK, 0 rows affected (0.00 sec)
