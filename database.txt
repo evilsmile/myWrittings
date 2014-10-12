@@ -100,3 +100,34 @@
 						　　else '不及格') as 英语,
 		　　from table
 		
+
+
+//增加id字段并设为主键、自增
+alter table tt add id int(11);
+update tt set id=1 where month=1;
+update tt set id=2 where month=2;
+alter table tt add primay key(id);
+alter table tt modify id int(11) auto_inrement;
+
+mysql> show table status like 'tt'
+-> \G
+*************************** 1. row ***************************
+Name: tt
+Engine: InnoDB
+Version: 10
+Row_format: Compact
+Rows: 3
+Avg_row_length: 5461
+Data_length: 16384
+Max_data_length: 0
+Index_length: 0
+Data_free: 6291456
+Auto_increment: 36
+Create_time: 2014-10-12 18:54:59
+Update_time: NULL
+Check_time: NULL
+Collation: latin1_swedish_ci
+Checksum: NULL
+Create_options: 
+Comment: 
+1 row in set (0.00 sec)
